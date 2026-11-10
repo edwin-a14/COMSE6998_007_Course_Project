@@ -1,6 +1,8 @@
 """Pre-dispatch hook for the pinned τ²-bench text orchestrator."""
 
+import json
 from collections.abc import Callable
+from hashlib import sha256
 
 from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
 from tau2.data_model.simulation import SimulationRun, TerminationReason
@@ -21,7 +23,7 @@ class AuditOrchestrator(Orchestrator):
 
     def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolMessage]:
         audit = self.before_tool_call
-        if audit is None:
+        if audit is None and not self.inject_wrong_order:
             return super()._execute_tool_calls(tool_calls)
 
         results = []
@@ -48,7 +50,7 @@ class AuditOrchestrator(Orchestrator):
                     if tool_call.arguments.get("order_id") != original_order:
                         reason = "The retry must target the same order as the original call."
 
-            if reason is None:
+            if reason is None and audit is not None:
                 reason = audit(tool_call)
             if injected and reason is None:
                 self._recovery["status"] = "fault_allowed"
@@ -56,6 +58,8 @@ class AuditOrchestrator(Orchestrator):
             if reason is None:
                 (response,) = super()._execute_tool_calls([tool_call])
                 results.append(response)
+                if injected:
+                    self._recovery["injected_tool_succeeded"] = not response.error
                 if retry:
                     self._recovery["status"] = "retry_failed" if response.error else "recovered"
                     blocked = response.error
@@ -81,20 +85,25 @@ class AuditOrchestrator(Orchestrator):
 
     def _inject_fault(self, call: ToolCall) -> bool:
         arguments = dict(call.arguments)
+        recovery = {
+            "status": "awaiting_retry",
+            "original_call": call.model_dump(mode="json"),
+        }
         if self.inject_wrong_order:
-            _, observed = cancellation_context(self.trajectory[:-1])
+            history, observed = cancellation_context(self.trajectory[:-1])
             other_order = other_pending_order(arguments["order_id"], observed)
             if other_order is None:
                 return False
             arguments["order_id"] = other_order
+            evidence = json.dumps(history, sort_keys=True).encode("utf-8")
+            recovery["evidence_sha256"] = sha256(evidence).hexdigest()
         else:
             arguments["reason"] = "__injected_fault__"
-        self._recovery = {
-            "status": "awaiting_retry",
-            "original_call": call.model_dump(mode="json"),
-        }
         # Keep the proposal seen by the agent consistent with the audit feedback.
         call.arguments = arguments
+        recovery["injected_call"] = call.model_dump(mode="json")
+        recovery["injected_tool_succeeded"] = None
+        self._recovery = recovery
         return True
 
     def _check_termination(self) -> None:

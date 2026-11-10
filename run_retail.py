@@ -46,9 +46,6 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--max-steps must be positive")
     if args.inject_cancellation_fault and args.audit != "deterministic":
         parser.error("--inject-cancellation-fault requires --audit deterministic")
-    if args.inject_wrong_order and args.audit != "semantic":
-        parser.error("--inject-wrong-order requires --audit semantic")
-
     config = TextRunConfig(
         domain="retail",
         task_split_name=args.task_split,

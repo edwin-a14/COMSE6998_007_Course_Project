@@ -63,20 +63,35 @@ the semantic auditor. The command exits nonzero if either semantic verdict
 differs from its expected verdict. Add `--dry-run` to inspect the cases and the
 deterministic verdicts without making API calls.
 
-### Test semantic recovery in a live retail run
+### Compare the same wrong-order fault across audit modes
 
 From `tau2-bench`:
 
 ```sh
-uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
-  --audit semantic --inject-wrong-order \
-  --output data/simulations/project-semantic-recovery-88/results.json
+for mode in off deterministic semantic; do
+  output="data/simulations/project-wrong-order-88-seed43-$mode/results.json"
+  if [ -f "$output" ]; then
+    echo "Keeping existing result: $output"
+    continue
+  fi
+  uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
+    --task-id 88 --seed 43 --audit "$mode" --inject-wrong-order \
+    --output "$output" || break
+done
 ```
 
-Semantic mode calls the model only for assistant cancellations. An abstention
-prevents dispatch. The diagnostic substitutes a different observed pending
-order and gives the agent one retry for the original order. Check for
-`block, allow`, `recovered`, and reward 1. The saved simulation records verdicts,
-tokens, and latency in `info.semantic_checks`. If the auditor allows the
-injection, the run records `fault_allowed`. If the agent never proposes a
-cancellation with two observed pending orders, it records `not_triggered`.
+The loop skips existing result files. The diagnostic substitutes a different
+observed pending order. A block gives the agent one cancellation retry for
+the original order. Semantic mode calls
+the model only for assistant cancellations and blocks on abstention.
+
+Compare the injected arguments, `injected_tool_succeeded`, and recovery status in
+`info.cancellation_recovery`, alongside the native reward and database match.
+`fault_allowed` means the injected proposal reached dispatch.
+`injected_tool_succeeded` is null when the proposal never reached the tool.
+If no eligible cancellation was proposed, the status is `not_triggered`.
+Semantic verdicts, token usage, and latency are in `info.semantic_checks`.
+
+The shared seed holds the run configuration fixed, but live conversations can
+differ. Compare `evidence_sha256` to see whether the dialogue and order status
+presented to the auditor were identical across runs.
