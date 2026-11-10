@@ -5,56 +5,31 @@ import json
 from pathlib import Path
 from time import perf_counter
 
-from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
+from tau2.data_model.message import AssistantMessage, ToolCall
 from tau2.data_model.simulation import Results
 
-from semantic_audit import audit_cancellation
+from semantic_audit import audit_cancellation, cancellation_context, other_pending_order
 from tau2_audit import retail_cancellation_block_reason
 
 
 def replay_inputs(trace: Path) -> tuple[list[dict], ToolCall, ToolCall]:
     """Extract dialogue and observed order status before the first cancellation."""
     (simulation,) = Results.load(trace).simulations
-    history = []
-    order_lookups = set()
-    observed_status = {}
-    for message in simulation.get_messages():
-        if isinstance(message, (AssistantMessage, UserMessage)):
-            for call in message.tool_calls or []:
-                if call.name == "cancel_pending_order":
-                    order_id = call.arguments["order_id"]
-                    if observed_status.get(order_id) != "pending":
-                        raise ValueError("The original order must be observed as pending")
-                    other_id = next(
-                        (
-                            key for key, status in observed_status.items()
-                            if key != order_id and status == "pending"
-                        ),
-                        None,
-                    )
-                    if other_id is None:
-                        raise ValueError("The trace needs another observed pending order")
-                    wrong_order = call.model_copy(update={
-                        "arguments": {**call.arguments, "order_id": other_id},
-                    })
-                    return history, call, wrong_order
-                if call.name == "get_order_details":
-                    order_lookups.add(call.id)
-            if message.content:
-                history.append({"role": message.role, "content": message.content})
-        elif (
-            isinstance(message, ToolMessage)
-            and message.id in order_lookups
-            and not message.error
-        ):
-            order = json.loads(message.content)
-            observed_status[order["order_id"]] = order["status"]
-            history.append({
-                "role": "tool",
-                "tool": "get_order_details",
-                "order_id": order["order_id"],
-                "status": order["status"],
+    messages = simulation.get_messages()
+    for index, message in enumerate(messages):
+        if not isinstance(message, AssistantMessage):
+            continue
+        for call in message.tool_calls or []:
+            if call.name != "cancel_pending_order":
+                continue
+            history, observed = cancellation_context(messages[:index])
+            other_id = other_pending_order(call.arguments["order_id"], observed)
+            if other_id is None:
+                raise ValueError("The trace needs two observed pending orders")
+            wrong_order = call.model_copy(update={
+                "arguments": {**call.arguments, "order_id": other_id},
             })
+            return history, call, wrong_order
     raise ValueError("The trace has no cancellation proposal")
 
 

@@ -62,3 +62,21 @@ order. It prints each verdict and latency as JSON, along with token usage for
 the semantic auditor. The command exits nonzero if either semantic verdict
 differs from its expected verdict. Add `--dry-run` to inspect the cases and the
 deterministic verdicts without making API calls.
+
+### Test semantic recovery in a live retail run
+
+From `tau2-bench`:
+
+```sh
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
+  --audit semantic --inject-wrong-order \
+  --output data/simulations/project-semantic-recovery-88/results.json
+```
+
+Semantic mode calls the model only for assistant cancellations. An abstention
+prevents dispatch. The diagnostic substitutes a different observed pending
+order and gives the agent one retry for the original order. Check for
+`block, allow`, `recovered`, and reward 1. The saved simulation records verdicts,
+tokens, and latency in `info.semantic_checks`. If the auditor allows the
+injection, the run records `fault_allowed`. If the agent never proposes a
+cancellation with two observed pending orders, it records `not_triggered`.
