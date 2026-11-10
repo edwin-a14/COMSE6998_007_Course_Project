@@ -95,3 +95,27 @@ Semantic verdicts, token usage, and latency are in `info.semantic_checks`.
 The shared seed holds the run configuration fixed, but live conversations can
 differ. Compare `evidence_sha256` to see whether the dialogue and order status
 presented to the auditor were identical across runs.
+
+### Run the cancellation suite
+
+From `tau2-bench`, inspect the two clean baselines, then collect the other
+clean runs with auditing off:
+
+```sh
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail_suite.py \
+  --tasks 66 59 --conditions clean --modes off --summary-only
+
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail_suite.py \
+  --conditions clean --modes off
+```
+
+The full suite uses tasks 66, 69, 59, 78, and 98. Omit the mode and condition
+filters to run all 30 trials. The runner reuses saved results with matching
+settings. Use a separate `--output-root` to rerun the same seed with a different
+step limit. Use `--summary-only` to see completed and missing trials without
+calling any models.
+
+Review clean rejections against the conversation before classifying them as
+false blocks. On injected trials, keep `not_triggered` separate from runs where
+the fault was injected. The table reports native reward, termination, tool and
+recovery outcomes, and semantic audit tokens and latency.
