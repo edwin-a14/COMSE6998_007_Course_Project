@@ -46,3 +46,19 @@ original proposal, the retry if any, and the outcome in
 `info.cancellation_recovery`. Check both the recovery status and the native
 reward. Keep injected runs separate from clean benchmark results.
 
+### Replay the semantic auditor
+
+From `tau2-bench`, compare the current argument rule and the semantic auditor
+using the successful seed-43 baseline trace:
+
+```sh
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/replay_cancellation_audit.py \
+  data/simulations/retail-baseline-88-seed43/results.json
+```
+
+The replay sends two proposals against the same pre-cancellation history. It
+expects `allow` for the confirmed order and `block` for a different pending
+order. It prints each verdict and latency as JSON, along with token usage for
+the semantic auditor. The command exits nonzero if either semantic verdict
+differs from its expected verdict. Add `--dry-run` to inspect the cases and the
+deterministic verdicts without making API calls.
