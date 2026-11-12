@@ -30,7 +30,7 @@ def load_result(path, task, mode, condition, seed, max_steps):
         or config["max_steps"] != max_steps
         or config["agent_info"]["llm"] != MODEL
         or config["user_info"]["llm"] != MODEL
-        or (mode in ("semantic", "continuous") and info.get("audit_model") != MODEL)
+        or (mode in ("semantic", "continuous", "hybrid") and info.get("audit_model") != MODEL)
         or ("cancellation_recovery" in info) != (condition == "injected")
     ):
         raise ValueError(f"Existing result has different trial settings: {path}")
@@ -76,7 +76,7 @@ def summarize(path, simulation, condition):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tasks", nargs="+", type=int, default=TASKS)
-    parser.add_argument("--modes", nargs="+", choices=(*MODES, "continuous"), default=MODES)
+    parser.add_argument("--modes", nargs="+", choices=(*MODES, "continuous", "hybrid"), default=MODES)
     parser.add_argument("--conditions", nargs="+", choices=CONDITIONS, default=CONDITIONS)
     parser.add_argument("--seed", type=int, default=43)
     parser.add_argument("--max-steps", type=int, default=60)

@@ -176,3 +176,34 @@ tokens, and summed audit latency. The trace's recorded tool errors provide
 context for interpreting verdicts. Replay checks proposals without executing
 tools or changing the saved conversation. Add `--dry-run` to see the planned
 checks without model calls.
+
+### Compare hybrid auditing
+
+From `tau2-bench`, compare the three model-based modes on the same recorded
+tool proposals and on the cancellation replay with the substituted order:
+
+```sh
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/replay_tool_audit.py \
+  --modes semantic continuous hybrid -- \
+  data/simulations/project-suite-clean-69-seed43-off/results.json \
+  data/simulations/retail-baseline-88-seed43/results.json
+
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/replay_cancellation_audit.py \
+  data/simulations/project-suite-clean-69-seed43-off/results.json \
+  --modes semantic continuous hybrid
+```
+
+Hybrid mode blocks missing or blank ZIP codes on name lookups and checks
+cancellation arguments. Cancellations that pass the rules use the same
+semantic prompt as the other modes. Replay reports rule blocks alongside
+model verdicts. Audit calls, tokens, and latency count only model checks.
+
+Run the live hybrid checkpoint with the same task, seed, and trace used for
+the earlier controls:
+
+```sh
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
+  --task-id 69 --seed 43 --max-steps 60 --audit hybrid \
+  --checkpoint data/simulations/project-suite-clean-69-seed43-off/results.json \
+  --output data/simulations/project-checkpoint-69-seed43-hybrid/results.json
+```

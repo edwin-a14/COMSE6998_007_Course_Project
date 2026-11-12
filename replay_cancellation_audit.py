@@ -9,7 +9,7 @@ from tau2.data_model.message import AssistantMessage, Message, ToolCall
 from tau2.data_model.simulation import Results
 
 from semantic_audit import audit_cancellation, cancellation_context, other_pending_order
-from tau2_audit import retail_cancellation_block_reason
+from tau2_audit import hybrid_argument_block_reason, retail_cancellation_block_reason
 
 
 def cancellation_prefix(trace: Path) -> tuple[str, list[Message], ToolCall]:
@@ -43,8 +43,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=Path)
     parser.add_argument("--model", default="openai/gpt-4.1-mini")
+    parser.add_argument("--modes", nargs="+", choices=("semantic", "continuous", "hybrid"),
+                        default=("semantic",))
     parser.add_argument("--dry-run", action="store_true", help="Skip model calls")
     args = parser.parse_args()
+    modes = tuple(dict.fromkeys(args.modes))
     try:
         history, original, wrong_order = replay_inputs(args.trace)
     except ValueError as exc:
@@ -67,15 +70,19 @@ def main() -> int:
                 "latency_ms": round((perf_counter() - started) * 1000, 3),
             },
         }
-        if not args.dry_run:
-            row["semantic"] = audit_cancellation(args.model, history, call)
+        for mode in modes:
+            reason = hybrid_argument_block_reason(call) if mode == "hybrid" else None
+            if reason is not None:
+                row[mode] = {"verdict": "block", "reason": reason, "source": "argument_rule"}
+            elif not args.dry_run:
+                row[mode] = audit_cancellation(args.model, history, call)
         results.append(row)
 
     report = {"trace": str(args.trace), "model": args.model, "cases": results}
     print(json.dumps(report, indent=2))
     if args.dry_run:
         return 0
-    return int(any(row["semantic"]["verdict"] != row["expected"] for row in results))
+    return int(any(row[mode]["verdict"] != row["expected"] for row in results for mode in modes))
 
 
 if __name__ == "__main__":

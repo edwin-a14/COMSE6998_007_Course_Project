@@ -19,7 +19,7 @@ class AuditVerdict(BaseModel):
 def should_audit_tool(mode: str, call: ToolCall) -> bool:
     return call.requestor == "assistant" and (
         mode == "continuous"
-        or (mode == "semantic" and call.name == "cancel_pending_order")
+        or (mode in ("semantic", "hybrid") and call.name == "cancel_pending_order")
     )
 
 

@@ -200,3 +200,14 @@ def retail_cancellation_block_reason(call: ToolCall) -> str | None:
             "Ask the customer only for information or authorization still missing."
         )
     return None
+
+
+def hybrid_argument_block_reason(call: ToolCall) -> str | None:
+    """Check arguments that can be validated without a model."""
+    if call.requestor != "assistant":
+        return None
+    if call.name == "find_user_id_by_name_zip":
+        zip_code = call.arguments.get("zip")
+        if not isinstance(zip_code, str) or not zip_code.strip():
+            return "Provide the customer's ZIP code before retrying the name lookup."
+    return retail_cancellation_block_reason(call)
