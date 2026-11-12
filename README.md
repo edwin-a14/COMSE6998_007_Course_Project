@@ -120,8 +120,10 @@ act on the first valid cancellation:
 
 The order faults allow one retry on the original order, as the existing faults
 do; `cancellation_recovery.status` ends as `recovered`, `retry_failed`,
-`no_retry`, or `fault_allowed`. The unretrieved-order fault is not triggered
-when the agent has already retrieved every listed pending order. Since D5 only
+`no_retry`, or `fault_allowed`. The unretrieved-order fault needs an order that
+`get_user_details` listed but no lookup retrieved, so it is not triggered when
+the agent retrieved every listed pending order, or never called
+`get_user_details` because the customer gave the order id. Since D5 only
 warns, the batched-call fault ends as `fault_allowed`, and detection shows as
 the warning in `deterministic_checks`; it is not injected into a batch the agent
 made itself.
@@ -137,11 +139,25 @@ All four faults also run with `--audit off` as the unaudited baseline.
 `info.cancellation_recovery.fault_type` names the fault; the two existing
 faults record the same fields as before.
 
+D1 and D2 have no injected fault and are covered by unit tests only. Changing
+the agent's own write call cannot reach them: by the time of a write the
+customer is already authenticated, and an order id of another user is caught
+first by D4, or by D3 when it is mentioned but not retrieved. Testing them live
+needs a customer scenario instead, for example a customer who asks to cancel
+someone else's order, scored by detection rather than reward.
+
+Every block and retry adds turns, and a run stopped by the step limit gets
+reward 0 without evaluation. Use `--max-steps 200`, the τ²-bench default, for
+experiments rather than the `run_retail.py` default of 30.
+
 ```sh
 uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
-  --audit deterministic-general --inject-unretrieved-order \
+  --audit deterministic-general --inject-unretrieved-order --max-steps 200 \
   --output data/simulations/project-general-88-unretrieved/results.json
 ```
+
+Pilot runs of these faults, with the traces, are in
+[`results/general_deterministic_audit/`](results/general_deterministic_audit/README.md).
 
 ### Compare the same wrong-order fault across audit modes
 
