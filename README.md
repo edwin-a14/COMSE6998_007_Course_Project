@@ -282,3 +282,16 @@ blocks the injected cancellation, `--no-recovery` ends the run before the next
 agent turn. The result records `blocked_no_retry` and uses the benchmark's
 `too_many_errors` termination reason. The earlier laptop exchange still
 contributes to the final state.
+
+For the second paired ablation, use the task 69 training checkpoint:
+
+```sh
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
+  --task-id 69 --task-split train --seed 43 --max-steps 60 --audit hybrid \
+  --checkpoint data/simulations/project-suite-clean-69-seed43-off/results.json \
+  --no-recovery \
+  --output data/simulations/project-checkpoint-69-seed43-hybrid-no-recovery/results.json
+```
+
+See [RETAIL_RESULTS.md](RETAIL_RESULTS.md) for the saved comparisons and the
+command to regenerate the tables offline.
