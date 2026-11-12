@@ -15,13 +15,17 @@ from tau2.runner import (
     run_simulation,
 )
 
+from deterministic_audit import GeneralDeterministicAuditor
 from semantic_audit import audit_cancellation, cancellation_context
 from tau2_audit import AuditOrchestrator, retail_cancellation_block_reason
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--audit", choices=("off", "deterministic", "semantic"), default="off")
+    parser.add_argument(
+        "--audit", choices=("off", "deterministic", "deterministic-general", "semantic"),
+        default="off",
+    )
     parser.add_argument("--audit-llm", default="openai/gpt-4.1-mini")
     faults = parser.add_mutually_exclusive_group()
     faults.add_argument(
@@ -103,8 +107,12 @@ def main(argv: list[str] | None = None) -> None:
             "already authorized, and ask only for anything still missing."
         )
 
+    general_auditor = None
     if args.audit == "deterministic":
         orchestrator.before_tool_call = retail_cancellation_block_reason
+    elif args.audit == "deterministic-general":
+        general_auditor = GeneralDeterministicAuditor.for_orchestrator(orchestrator, config.domain)
+        orchestrator.before_tool_call = general_auditor
     elif args.audit == "semantic":
         orchestrator.before_tool_call = semantic_block_reason
     orchestrator.inject_cancellation_fault = args.inject_cancellation_fault
@@ -117,6 +125,8 @@ def main(argv: list[str] | None = None) -> None:
     simulation.info = {**(simulation.info or {}), "audit_mode": args.audit}
     if args.audit == "semantic":
         simulation.info.update(audit_model=args.audit_llm, semantic_checks=semantic_checks)
+    if general_auditor is not None:
+        simulation.info["deterministic_checks"] = general_auditor.decisions
     results = Results(info=info, tasks=[task], simulations=[simulation])
     with args.output.open("x", encoding="utf-8") as output:
         output.write(results.model_dump_json(indent=2))
@@ -131,6 +141,13 @@ def main(argv: list[str] | None = None) -> None:
         print(f'Cancellation recovery: {simulation.info["cancellation_recovery"]["status"]}')
     if semantic_checks:
         print("Semantic verdicts: " + ", ".join(check["verdict"] for check in semantic_checks))
+    if general_auditor is not None:
+        decisions = general_auditor.decisions
+        rules = [decision["rule"] for decision in decisions if decision["rule"]]
+        print(
+            f"Deterministic checks: {len(decisions)} write calls audited, "
+            f"blocked by: {', '.join(rules) or 'none'}"
+        )
     print(f"Saved {args.output}")
 
 
