@@ -76,7 +76,10 @@ def summarize(path, simulation, condition):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tasks", nargs="+", type=int, default=TASKS)
-    parser.add_argument("--modes", nargs="+", choices=(*MODES, "continuous", "hybrid"), default=MODES)
+    parser.add_argument(
+        "--modes", nargs="+", choices=(*MODES, "continuous", "rules-only", "hybrid"),
+        default=MODES,
+    )
     parser.add_argument("--conditions", nargs="+", choices=CONDITIONS, default=CONDITIONS)
     parser.add_argument("--seed", type=int, default=43)
     parser.add_argument("--max-steps", type=int, default=60)

@@ -11,6 +11,8 @@ from tau2.orchestrator.orchestrator import Orchestrator
 
 from semantic_audit import cancellation_context, other_pending_order
 
+RULE_AUDIT_MODES = ("rules-only", "hybrid")
+
 
 class AuditOrchestrator(Orchestrator):
     before_tool_call: Callable[[ToolCall], str | None] | None = None
@@ -202,7 +204,7 @@ def retail_cancellation_block_reason(call: ToolCall) -> str | None:
     return None
 
 
-def hybrid_argument_block_reason(call: ToolCall) -> str | None:
+def retail_argument_block_reason(call: ToolCall) -> str | None:
     """Check arguments that can be validated without a model."""
     if call.requestor != "assistant":
         return None

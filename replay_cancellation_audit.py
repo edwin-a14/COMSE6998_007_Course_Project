@@ -9,7 +9,9 @@ from tau2.data_model.message import AssistantMessage, Message, ToolCall
 from tau2.data_model.simulation import Results
 
 from semantic_audit import audit_cancellation, cancellation_context, other_pending_order
-from tau2_audit import hybrid_argument_block_reason, retail_cancellation_block_reason
+from tau2_audit import (
+    RULE_AUDIT_MODES, retail_argument_block_reason, retail_cancellation_block_reason,
+)
 
 
 def cancellation_prefix(trace: Path) -> tuple[str, list[Message], ToolCall]:
@@ -43,7 +45,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=Path)
     parser.add_argument("--model", default="openai/gpt-4.1-mini")
-    parser.add_argument("--modes", nargs="+", choices=("semantic", "continuous", "hybrid"),
+    parser.add_argument("--modes", nargs="+", choices=("semantic", "continuous", *RULE_AUDIT_MODES),
                         default=("semantic",))
     parser.add_argument("--dry-run", action="store_true", help="Skip model calls")
     args = parser.parse_args()
@@ -71,9 +73,13 @@ def main() -> int:
             },
         }
         for mode in modes:
-            reason = hybrid_argument_block_reason(call) if mode == "hybrid" else None
-            if reason is not None:
-                row[mode] = {"verdict": "block", "reason": reason, "source": "argument_rule"}
+            reason = retail_argument_block_reason(call) if mode in RULE_AUDIT_MODES else None
+            if mode == "rules-only" or reason is not None:
+                row[mode] = {
+                    "verdict": "block" if reason is not None else "allow",
+                    "reason": reason,
+                    "source": "argument_rule",
+                }
             elif not args.dry_run:
                 row[mode] = audit_cancellation(args.model, history, call)
         results.append(row)

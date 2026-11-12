@@ -10,7 +10,7 @@ from tau2.data_model.simulation import Results, SimulationRun
 from tau2.runner import build_environment
 
 from semantic_audit import audit_tool_call, should_audit_tool
-from tau2_audit import hybrid_argument_block_reason
+from tau2_audit import RULE_AUDIT_MODES, retail_argument_block_reason
 
 
 MODES = ("semantic", "continuous")
@@ -31,8 +31,8 @@ def replay(
             checks = {}
             rule_blocks = {}
             for mode in modes:
-                if mode == "hybrid":
-                    reason = hybrid_argument_block_reason(call)
+                if mode in RULE_AUDIT_MODES:
+                    reason = retail_argument_block_reason(call)
                     if reason is not None:
                         rule_blocks[mode] = reason
                         continue
@@ -76,7 +76,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("traces", type=Path, nargs="+")
     parser.add_argument("--model", default="openai/gpt-4.1-mini")
-    parser.add_argument("--modes", nargs="+", choices=(*MODES, "hybrid"), default=MODES)
+    parser.add_argument("--modes", nargs="+", choices=(*MODES, *RULE_AUDIT_MODES), default=MODES)
     parser.add_argument("--dry-run", action="store_true", help="Show planned checks without model calls")
     args = parser.parse_args()
     modes = tuple(dict.fromkeys(args.modes))

@@ -193,10 +193,14 @@ uv run --no-sync python -B ../COMSE6998_007_Course_Project/replay_cancellation_a
   --modes semantic continuous hybrid
 ```
 
-Hybrid mode blocks missing or blank ZIP codes on name lookups and checks
-cancellation arguments. Cancellations that pass the rules use the same
-semantic prompt as the other modes. Replay reports rule blocks alongside
+Hybrid and `rules-only` both block missing or blank ZIP codes on name lookups
+and check cancellation arguments. Hybrid sends cancellations that pass the
+rules to the semantic auditor. Add `rules-only` to either replay's mode list
+to include the rules-only baseline. Replay reports rule blocks alongside
 model verdicts. Audit calls, tokens, and latency count only model checks.
+The cancellation replay exits with status 1 when any selected verdict
+differs from the expected verdict, including when `rules-only` allows the
+wrong order.
 
 Run the live hybrid checkpoint with the same task, seed, and trace used for
 the earlier controls:
@@ -207,3 +211,6 @@ uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
   --checkpoint data/simulations/project-suite-clean-69-seed43-off/results.json \
   --output data/simulations/project-checkpoint-69-seed43-hybrid/results.json
 ```
+
+For the rules-only checkpoint, use `--audit rules-only` and the output path
+`data/simulations/project-checkpoint-69-seed43-rules-only/results.json`.

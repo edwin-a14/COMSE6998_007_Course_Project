@@ -21,7 +21,8 @@ from semantic_audit import (
     audit_tool_call, cancellation_context, other_pending_order, should_audit_tool,
 )
 from tau2_audit import (
-    AuditOrchestrator, hybrid_argument_block_reason, retail_cancellation_block_reason,
+    RULE_AUDIT_MODES, AuditOrchestrator, retail_argument_block_reason,
+    retail_cancellation_block_reason,
 )
 
 
@@ -29,7 +30,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--audit",
-        choices=("off", "deterministic", "semantic", "continuous", "hybrid"),
+        choices=("off", "deterministic", "semantic", "continuous", *RULE_AUDIT_MODES),
         default="off",
     )
     parser.add_argument("--audit-llm", default="openai/gpt-4.1-mini")
@@ -58,8 +59,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(f"Output already exists: {args.output}")
     if args.max_steps < 1:
         parser.error("--max-steps must be positive")
-    if args.inject_cancellation_fault and args.audit not in ("deterministic", "hybrid"):
-        parser.error("--inject-cancellation-fault requires --audit deterministic or hybrid")
+    if args.inject_cancellation_fault and args.audit not in ("deterministic", *RULE_AUDIT_MODES):
+        parser.error("--inject-cancellation-fault requires --audit deterministic, rules-only, or hybrid")
     config = TextRunConfig(
         domain="retail",
         task_split_name=args.task_split,
@@ -126,9 +127,9 @@ def main(argv: list[str] | None = None) -> None:
         if args.audit == "continuous" else {}
     )
 
-    def semantic_block_reason(call: ToolCall) -> str | None:
-        if args.audit == "hybrid":
-            reason = hybrid_argument_block_reason(call)
+    def audit_block_reason(call: ToolCall) -> str | None:
+        if args.audit in RULE_AUDIT_MODES:
+            reason = retail_argument_block_reason(call)
             if reason is not None:
                 rule_blocks.append({"call": call.model_dump(mode="json"), "reason": reason})
                 return f"Argument check blocked the call. {reason}"
@@ -150,8 +151,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.audit == "deterministic":
         orchestrator.before_tool_call = retail_cancellation_block_reason
-    elif args.audit in ("semantic", "continuous", "hybrid"):
-        orchestrator.before_tool_call = semantic_block_reason
+    elif args.audit in ("semantic", "continuous", *RULE_AUDIT_MODES):
+        orchestrator.before_tool_call = audit_block_reason
     orchestrator.inject_cancellation_fault = args.inject_cancellation_fault
     orchestrator.inject_wrong_order = args.inject_wrong_order or checkpoint is not None
     orchestrator.checkpoint = checkpoint
@@ -165,7 +166,7 @@ def main(argv: list[str] | None = None) -> None:
         simulation.info["checkpoint_trace"] = str(args.checkpoint)
     if args.audit in ("semantic", "continuous", "hybrid"):
         simulation.info.update(audit_model=args.audit_llm, semantic_checks=semantic_checks)
-    if args.audit == "hybrid":
+    if args.audit in RULE_AUDIT_MODES:
         simulation.info["rule_blocks"] = rule_blocks
     results = Results(info=info, tasks=[task], simulations=[simulation])
     with args.output.open("x", encoding="utf-8") as output:
