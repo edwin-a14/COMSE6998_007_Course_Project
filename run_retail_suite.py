@@ -18,7 +18,7 @@ MODEL = "openai/gpt-4.1-mini"
 RUNNER = Path(__file__).with_name("run_retail.py").resolve()
 
 
-def load_result(path, task, mode, condition, seed, max_steps):
+def load_result(path, task, mode, condition, seed, max_steps, task_split="train"):
     data = json.loads(path.read_text())
     (simulation,) = data["simulations"]
     config = data["info"]
@@ -26,11 +26,12 @@ def load_result(path, task, mode, condition, seed, max_steps):
     if (
         simulation["task_id"] != str(task)
         or info.get("audit_mode") != mode
+        or info.get("task_split", "train") != task_split
         or config["seed"] != seed
         or config["max_steps"] != max_steps
         or config["agent_info"]["llm"] != MODEL
         or config["user_info"]["llm"] != MODEL
-        or (mode == "semantic" and info.get("audit_model") != MODEL)
+        or (mode in ("semantic", "continuous", "hybrid") and info.get("audit_model") != MODEL)
         or ("cancellation_recovery" in info) != (condition == "injected")
     ):
         raise ValueError(f"Existing result has different trial settings: {path}")
@@ -67,6 +68,7 @@ def summarize(path, simulation, condition):
         clean_outcome(path, simulation) if condition == "clean" else recovery["status"],
         recovery.get("injected_tool_succeeded"),
         len(info.get("audit_rejections") or []),
+        len(checks),
         sum(tokens) if all(token is not None for token in tokens) else None,
         round(sum(check["latency_ms"] for check in checks), 2),
     )
@@ -75,7 +77,11 @@ def summarize(path, simulation, condition):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tasks", nargs="+", type=int, default=TASKS)
-    parser.add_argument("--modes", nargs="+", choices=MODES, default=MODES)
+    parser.add_argument("--task-split", choices=("train", "test", "base"), default="train")
+    parser.add_argument(
+        "--modes", nargs="+", choices=(*MODES, "continuous", "rules-only", "hybrid"),
+        default=MODES,
+    )
     parser.add_argument("--conditions", nargs="+", choices=CONDITIONS, default=CONDITIONS)
     parser.add_argument("--seed", type=int, default=43)
     parser.add_argument("--max-steps", type=int, default=60)
@@ -87,7 +93,7 @@ def main():
 
     columns = (
         "Task", "Condition", "Audit", "Reward", "DB match", "Termination",
-        "Outcome", "Injected tool succeeded", "Rejected calls", "Audit tokens", "Audit ms",
+        "Outcome", "Injected tool succeeded", "Rejected calls", "Audit calls", "Audit tokens", "Audit ms",
     )
     print("| " + " | ".join(columns) + " |", flush=True)
     print("| " + " | ".join("---" for _ in columns) + " |", flush=True)
@@ -98,6 +104,7 @@ def main():
         if not path.exists() and not args.summary_only:
             command = [
                 sys.executable, "-B", str(RUNNER), "--task-id", str(task),
+                "--task-split", args.task_split,
                 "--audit", mode, "--seed", str(args.seed), "--max-steps", str(args.max_steps),
                 "--agent-llm", MODEL, "--user-llm", MODEL, "--audit-llm", MODEL,
                 "--output", str(path),
@@ -107,12 +114,14 @@ def main():
             subprocess.run(command, stdout=sys.stderr, check=True)
         if path.exists():
             try:
-                simulation = load_result(path, task, mode, condition, args.seed, args.max_steps)
+                simulation = load_result(
+                    path, task, mode, condition, args.seed, args.max_steps, args.task_split,
+                )
                 metrics = summarize(path, simulation, condition)
             except (KeyError, ValueError) as exc:
                 parser.exit(1, f"Cannot use {path}: {exc}\n")
         else:
-            metrics = (None, None, None, "Missing", None, None, None, None)
+            metrics = (None, None, None, "Missing", None, None, None, None, None)
         row = (task, condition, mode, *metrics)
         print("| " + " | ".join("—" if value is None else str(value) for value in row) + " |", flush=True)
 

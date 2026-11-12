@@ -4,22 +4,61 @@ import json
 from collections.abc import Callable
 from hashlib import sha256
 
-from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
+from tau2.data_model.message import AssistantMessage, Message, ToolCall, ToolMessage, UserMessage
 from tau2.data_model.simulation import SimulationRun, TerminationReason
+from tau2.data_model.tasks import InitialState
 from tau2.orchestrator.orchestrator import Orchestrator
 
 from semantic_audit import cancellation_context, other_pending_order
+
+RULE_AUDIT_MODES = ("rules-only", "hybrid")
 
 
 class AuditOrchestrator(Orchestrator):
     before_tool_call: Callable[[ToolCall], str | None] | None = None
     inject_cancellation_fault = False
     inject_wrong_order = False
+    recovery_enabled = True
+    checkpoint: tuple[list[Message], list[ToolCall], str] | None = None
 
     def initialize(self) -> None:
         self._rejected_calls: dict[str, dict] = {}
         self._recovery: dict | None = None
-        super().initialize()
+        if self.checkpoint is None:
+            super().initialize()
+            return
+
+        history, batch, _ = self.checkpoint
+        # Benchmark cost totals should count only the continuation.
+        history = [
+            message.model_copy(update={"cost": 0.0})
+            if isinstance(message, (AssistantMessage, UserMessage)) else message
+            for message in history
+        ]
+        task = self.task
+        initial_state = task.initial_state or InitialState()
+        self.task = task.model_copy(update={
+            "initial_state": initial_state.model_copy(update={"message_history": history}),
+        })
+        try:
+            super().initialize()
+        finally:
+            # Score the full trajectory against the original benchmark task.
+            self.task = task
+
+        generate = self.agent.generate_next_message
+
+        def propose_once(message, state):
+            self.agent.generate_next_message = generate
+            proposal = AssistantMessage(
+                role="assistant",
+                tool_calls=[call.model_copy(deep=True) for call in batch],
+                cost=0.0,
+            )
+            state.messages.extend((message, proposal))
+            return proposal, state
+
+        self.agent.generate_next_message = propose_once
 
     def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolMessage]:
         audit = self.before_tool_call
@@ -66,7 +105,9 @@ class AuditOrchestrator(Orchestrator):
                 continue
 
             blocked = True
-            if retry:
+            if injected and not self.recovery_enabled:
+                self._recovery["status"] = "blocked_no_retry"
+            elif retry:
                 self._recovery["status"] = "retry_failed"
             self._rejected_calls[tool_call.id] = {
                 "call": tool_call.model_dump(mode="json"),
@@ -91,7 +132,10 @@ class AuditOrchestrator(Orchestrator):
         }
         if self.inject_wrong_order:
             history, observed = cancellation_context(self.trajectory[:-1])
-            other_order = other_pending_order(arguments["order_id"], observed)
+            other_order = (
+                self.checkpoint[2] if self.checkpoint is not None
+                else other_pending_order(arguments["order_id"], observed)
+            )
             if other_order is None:
                 return False
             arguments["order_id"] = other_order
@@ -108,7 +152,9 @@ class AuditOrchestrator(Orchestrator):
 
     def _check_termination(self) -> None:
         super()._check_termination()
-        if self._recovery is not None and self._recovery["status"] == "retry_failed":
+        if self._recovery is not None and self._recovery["status"] in (
+            "blocked_no_retry", "retry_failed",
+        ):
             self.done = True
             self.termination_reason = TerminationReason.TOO_MANY_ERRORS
 
@@ -166,3 +212,14 @@ def retail_cancellation_block_reason(call: ToolCall) -> str | None:
             "Ask the customer only for information or authorization still missing."
         )
     return None
+
+
+def retail_argument_block_reason(call: ToolCall) -> str | None:
+    """Check arguments that can be validated without a model."""
+    if call.requestor != "assistant":
+        return None
+    if call.name == "find_user_id_by_name_zip":
+        zip_code = call.arguments.get("zip")
+        if not isinstance(zip_code, str) or not zip_code.strip():
+            return "Provide the customer's ZIP code before retrying the name lookup."
+    return retail_cancellation_block_reason(call)
