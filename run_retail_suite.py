@@ -18,7 +18,7 @@ MODEL = "openai/gpt-4.1-mini"
 RUNNER = Path(__file__).with_name("run_retail.py").resolve()
 
 
-def load_result(path, task, mode, condition, seed, max_steps):
+def load_result(path, task, mode, condition, seed, max_steps, task_split="train"):
     data = json.loads(path.read_text())
     (simulation,) = data["simulations"]
     config = data["info"]
@@ -26,6 +26,7 @@ def load_result(path, task, mode, condition, seed, max_steps):
     if (
         simulation["task_id"] != str(task)
         or info.get("audit_mode") != mode
+        or info.get("task_split", "train") != task_split
         or config["seed"] != seed
         or config["max_steps"] != max_steps
         or config["agent_info"]["llm"] != MODEL
@@ -76,6 +77,7 @@ def summarize(path, simulation, condition):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tasks", nargs="+", type=int, default=TASKS)
+    parser.add_argument("--task-split", choices=("train", "test", "base"), default="train")
     parser.add_argument(
         "--modes", nargs="+", choices=(*MODES, "continuous", "rules-only", "hybrid"),
         default=MODES,
@@ -102,6 +104,7 @@ def main():
         if not path.exists() and not args.summary_only:
             command = [
                 sys.executable, "-B", str(RUNNER), "--task-id", str(task),
+                "--task-split", args.task_split,
                 "--audit", mode, "--seed", str(args.seed), "--max-steps", str(args.max_steps),
                 "--agent-llm", MODEL, "--user-llm", MODEL, "--audit-llm", MODEL,
                 "--output", str(path),
@@ -111,7 +114,9 @@ def main():
             subprocess.run(command, stdout=sys.stderr, check=True)
         if path.exists():
             try:
-                simulation = load_result(path, task, mode, condition, args.seed, args.max_steps)
+                simulation = load_result(
+                    path, task, mode, condition, args.seed, args.max_steps, args.task_split,
+                )
                 metrics = summarize(path, simulation, condition)
             except (KeyError, ValueError) as exc:
                 parser.exit(1, f"Cannot use {path}: {exc}\n")

@@ -214,3 +214,28 @@ uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
 
 For the rules-only checkpoint, use `--audit rules-only` and the output path
 `data/simulations/project-checkpoint-69-seed43-rules-only/results.json`.
+
+### Screen and replay held-out cancellations
+
+From `tau2-bench`, collect clean audit-off traces on retail test tasks 38, 74,
+and 90 and evaluate the eligible traces:
+
+```sh
+out=data/simulations/project-heldout-retail
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail_suite.py \
+  --tasks 38 74 90 --task-split test --conditions clean --modes off \
+  --output-root "$out" &&
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/replay_cancellation_audit.py \
+  --held-out --modes rules-only semantic hybrid continuous -- \
+  "$out"/project-suite-clean-{38,74,90}-seed43-off/results.json \
+  > "$out/cancellation-evaluation.json"
+```
+
+The report includes screening exclusions. Each eligible trace earned full
+benchmark reward and proposed the single cancellation expected by the
+benchmark. The replay tests that proposal and a blank reason, and adds a
+wrong-order case when the recorded prefix contains two pending orders. Task
+38 has one pending order in the benchmark database. Review the conversation
+for customer authorization when interpreting a verdict on the benchmark
+cancellation. Add `--dry-run` to the replay command to inspect labels and rule
+decisions before making model calls.

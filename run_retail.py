@@ -161,7 +161,9 @@ def main(argv: list[str] | None = None) -> None:
     info = get_info(config)
     simulation = run_simulation(orchestrator)
     simulation.trial = 0
-    simulation.info = {**(simulation.info or {}), "audit_mode": args.audit}
+    simulation.info = {
+        **(simulation.info or {}), "audit_mode": args.audit, "task_split": args.task_split,
+    }
     if checkpoint is not None:
         simulation.info["checkpoint_trace"] = str(args.checkpoint)
     if args.audit in ("semantic", "continuous", "hybrid"):
