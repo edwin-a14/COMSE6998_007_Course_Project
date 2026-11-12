@@ -154,8 +154,7 @@ def one_call_at_a_time(call: ToolCall, facts: Facts, batch: list[ToolCall], conf
         return None
     return (
         f"{call.name} was proposed together with {len(batch) - 1} other tool call(s), "
-        "but the policy allows one tool call at a time. This call was not executed. "
-        "Make this call on its own."
+        "but the policy allows one tool call at a time."
     )
 
 
@@ -220,14 +219,19 @@ def _is_id_arg(name: str) -> bool:
     return name == "id" or name.endswith(("_id", "_ids"))
 
 
-# Evaluated in order; the first rule that fires is reported.
+# Evaluated in order; the first rule that fires blocks the call and is reported.
 RULES: tuple[tuple[str, Rule], ...] = (
     ("D6_repeated_failure", repeated_failure),
-    ("D5_one_call_at_a_time", one_call_at_a_time),
     ("D1_authenticated", authenticated),
     ("D4_grounded_ids", grounded_ids),
     ("D3_record_observed", record_observed),
     ("D2_owned_by_user", owned_by_user),
+)
+
+# Recorded on the decision without blocking. Batching broke the policy in live
+# runs without harm, while blocking it cost extra turns and hid the rules above.
+WARNING_RULES: tuple[tuple[str, Rule], ...] = (
+    ("D5_one_call_at_a_time", one_call_at_a_time),
 )
 
 
@@ -245,11 +249,17 @@ def audit_call(
          if (reason := rule(call, facts, batch, config)) is not None),
         (None, None),
     )
+    warnings = [
+        {"rule": warning_id, "reason": warning}
+        for warning_id, rule in WARNING_RULES
+        if (warning := rule(call, facts, batch, config)) is not None
+    ]
     return {
         "call": call.model_dump(mode="json"),
         "verdict": "allow" if reason is None else "block",
         "rule": rule_id,
         "reason": reason,
+        "warnings": warnings,
         "facts": facts.snapshot(),
     }
 

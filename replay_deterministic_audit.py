@@ -26,6 +26,7 @@ def main() -> None:
     config = DOMAIN_CONFIGS[args.domain]
     is_write = write_tool_checker(build_environment(args.domain))
     verdicts = Counter()
+    warnings = Counter()
     for path in args.results:
         for simulation in Results.load(path).simulations:
             messages = simulation.get_messages()
@@ -38,6 +39,7 @@ def main() -> None:
                         continue
                     decision = audit_call(call, messages[:index], batch, config)
                     verdicts[decision["rule"] or "allow"] += 1
+                    warnings.update(warning["rule"] for warning in decision["warnings"])
                     print(json.dumps({
                         "trace": str(path),
                         "reward": simulation.reward_info.reward if simulation.reward_info else None,
@@ -45,8 +47,9 @@ def main() -> None:
                         "verdict": decision["verdict"],
                         "rule": decision["rule"],
                         "reason": decision["reason"],
+                        "warnings": [warning["rule"] for warning in decision["warnings"]],
                     }))
-    print(json.dumps({"summary": dict(verdicts)}))
+    print(json.dumps({"summary": dict(verdicts), "warnings": dict(warnings)}))
 
 
 if __name__ == "__main__":

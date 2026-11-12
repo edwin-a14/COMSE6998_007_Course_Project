@@ -236,9 +236,13 @@ def main(argv: list[str] | None = None) -> None:
     if general_auditor is not None:
         decisions = general_auditor.decisions
         rules = [decision["rule"] for decision in decisions if decision["rule"]]
+        warnings = [
+            warning["rule"] for decision in decisions for warning in decision["warnings"]
+        ]
         print(
             f"Deterministic checks: {len(decisions)} write calls audited, "
-            f"blocked by: {', '.join(rules) or 'none'}"
+            f"blocked by: {', '.join(rules) or 'none'}, "
+            f"warnings: {', '.join(warnings) or 'none'}"
         )
     print(f"Saved {args.output}")
 

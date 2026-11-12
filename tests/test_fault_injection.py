@@ -153,27 +153,19 @@ class InjectionTest(unittest.TestCase):
 
 
 class BatchedCallTest(unittest.TestCase):
-    def test_added_lookup_is_blocked_by_d5_and_recovered(self):
+    def test_added_lookup_is_recorded_as_a_d5_warning(self):
         orch = orchestrator(conversation(), inject_batched_call=True)
         cancel_result, lookup_result = propose_batch(orch, cancel(ORDER, "first"))
-        self.assertEqual(orch.before_tool_call.decisions[-1]["rule"], "D5_one_call_at_a_time")
-        self.assertTrue(cancel_result.error)
-        self.assertTrue(lookup_result.error)
-        self.assertIn("earlier call in this batch", lookup_result.content)
+        decision = orch.before_tool_call.decisions[-1]
+        self.assertEqual(decision["verdict"], "allow")
+        self.assertEqual([w["rule"] for w in decision["warnings"]], ["D5_one_call_at_a_time"])
+        self.assertFalse(cancel_result.error)
+        self.assertFalse(lookup_result.error)
         added = orch.trajectory[-3].tool_calls[1]
         self.assertEqual((added.name, added.arguments), ("get_order_details", {"order_id": ORDER}))
         self.assertLessEqual(len(added.id), 40)
         self.assertEqual(orch._recovery["fault_type"], "batched_call")
-
-        self.assertFalse(propose(orch, cancel(ORDER, "retry")).error)
-        self.assertEqual(orch._recovery["status"], "recovered")
-
-    def test_retry_batched_again_fails(self):
-        orch = orchestrator(conversation(), inject_batched_call=True)
-        propose(orch, cancel(ORDER, "first"))
-        lookup = ToolCall(id="lookup", name="get_order_details", arguments={"order_id": ORDER})
-        propose_batch(orch, cancel(ORDER, "retry"), lookup)
-        self.assertEqual(orch._recovery["status"], "retry_failed")
+        self.assertEqual(orch._recovery["status"], "fault_allowed")
 
     def test_not_injected_into_a_batch_the_agent_made(self):
         orch = orchestrator(conversation(), inject_batched_call=True)

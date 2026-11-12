@@ -173,11 +173,26 @@ class RuleTest(unittest.TestCase):
         self.assertBlocked(decision, "D4_grounded_ids")
         self.assertIn("item_ids 8895454203", decision["reason"])
 
-    def test_d5_blocks_write_batched_with_another_call(self):
+    def test_d5_warns_without_blocking_a_batched_write(self):
         dialogue = clean_dialogue()
         proposal = cancel()
         batch = [dialogue.call("get_user_details", {"user_id": USER}), proposal]
-        self.assertBlocked(audit(dialogue, proposal, batch), "D5_one_call_at_a_time")
+        decision = audit(dialogue, proposal, batch)
+        self.assertEqual(decision["verdict"], "allow", decision["reason"])
+        self.assertEqual(
+            [warning["rule"] for warning in decision["warnings"]], ["D5_one_call_at_a_time"],
+        )
+
+    def test_d5_does_not_hide_a_blocking_rule(self):
+        dialogue = clean_dialogue()
+        proposal = cancel("#W0000000")
+        batch = [dialogue.call("get_user_details", {"user_id": USER}), proposal]
+        decision = audit(dialogue, proposal, batch)
+        self.assertBlocked(decision, "D4_grounded_ids")
+        self.assertEqual(len(decision["warnings"]), 1)
+
+    def test_single_call_has_no_warnings(self):
+        self.assertEqual(audit(clean_dialogue(), cancel())["warnings"], [])
 
     def test_d6_blocks_after_repeated_failures(self):
         dialogue = clean_dialogue()
@@ -222,8 +237,11 @@ class AuditorHookTest(unittest.TestCase):
         self.assertIsNone(self.auditor(proposal))
         read = ToolCall(id="read", name="get_user_details", arguments={"user_id": USER})
         self.propose(read, proposal)
-        self.assertIn("one tool call at a time", self.auditor(proposal))
-        self.assertEqual([d["verdict"] for d in self.auditor.decisions], ["allow", "block"])
+        self.assertIsNone(self.auditor(proposal))
+        self.assertEqual(
+            [[w["rule"] for w in d["warnings"]] for d in self.auditor.decisions],
+            [[], ["D5_one_call_at_a_time"]],
+        )
 
 
 class RetailEnvironmentTest(unittest.TestCase):
