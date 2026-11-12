@@ -17,19 +17,25 @@ from tau2_audit import (
 
 def cancellation_prefix(trace: Path) -> tuple[str, list[Message], ToolCall]:
     """Find the first assistant cancellation and the messages before it."""
+    task_id, history, call, _ = cancellation_batch(trace)
+    return task_id, history, call
+
+
+def cancellation_batch(trace: Path) -> tuple[str, list[Message], ToolCall, list[ToolCall]]:
+    """Find the recorded tool batch that contains the first cancellation."""
     (simulation,) = Results.load(trace).simulations
-    history, call = _first_cancellation(simulation.get_messages())
-    return simulation.task_id, history, call
+    history, call, batch = _first_cancellation(simulation.get_messages())
+    return simulation.task_id, history, call, batch
 
 
-def _first_cancellation(messages: list[Message]) -> tuple[list[Message], ToolCall]:
+def _first_cancellation(messages: list[Message]) -> tuple[list[Message], ToolCall, list[ToolCall]]:
     for index, message in enumerate(messages):
         if not isinstance(message, AssistantMessage):
             continue
         for call in message.tool_calls or []:
             if call.name != "cancel_pending_order":
                 continue
-            return messages[:index], call
+            return messages[:index], call, message.tool_calls
     raise ValueError("The trace has no cancellation proposal")
 
 
@@ -102,7 +108,7 @@ def held_out_replay(paths, model, modes, dry_run):
             row["excluded"] = "Expected one benchmark cancellation target"
             continue
         try:
-            prefix, original = _first_cancellation(sim.get_messages())
+            prefix, original, _ = _first_cancellation(sim.get_messages())
         except ValueError as exc:
             row["excluded"] = str(exc)
             continue

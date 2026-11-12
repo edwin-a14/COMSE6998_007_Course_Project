@@ -16,7 +16,7 @@ from tau2.runner import (
 )
 from tau2.user.user_simulator import UserSimulator
 
-from replay_cancellation_audit import cancellation_prefix
+from replay_cancellation_audit import cancellation_batch
 from semantic_audit import (
     audit_tool_call, cancellation_context, other_pending_order, should_audit_tool,
 )
@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> None:
     checkpoint = None
     if args.checkpoint is not None:
         try:
-            source_task, history, call = cancellation_prefix(args.checkpoint)
+            source_task, history, call, batch = cancellation_batch(args.checkpoint)
         except (OSError, ValueError) as exc:
             parser.error(f"Cannot load checkpoint: {exc}")
         if source_task != task.id:
@@ -89,9 +89,16 @@ def main(argv: list[str] | None = None) -> None:
         if retail_cancellation_block_reason(call) is not None:
             parser.error("Checkpoint needs a cancellation with valid arguments")
         _, observed = cancellation_context(history)
-        if other_pending_order(call.arguments["order_id"], observed) is None:
-            parser.error("Checkpoint needs two observed pending orders")
-        checkpoint = (history, call)
+        earlier_orders = frozenset(
+            order_id for earlier in batch[:batch.index(call)]
+            if isinstance(order_id := earlier.arguments.get("order_id"), str)
+        )
+        wrong_order = other_pending_order(
+            call.arguments["order_id"], observed, excluded_orders=earlier_orders,
+        )
+        if wrong_order is None:
+            parser.error("Checkpoint needs another observed pending order outside the earlier calls")
+        checkpoint = (history, batch, wrong_order)
 
     environment = build_environment(config.domain)
     agent = build_agent(

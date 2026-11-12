@@ -18,7 +18,7 @@ class AuditOrchestrator(Orchestrator):
     before_tool_call: Callable[[ToolCall], str | None] | None = None
     inject_cancellation_fault = False
     inject_wrong_order = False
-    checkpoint: tuple[list[Message], ToolCall] | None = None
+    checkpoint: tuple[list[Message], list[ToolCall], str] | None = None
 
     def initialize(self) -> None:
         self._rejected_calls: dict[str, dict] = {}
@@ -27,7 +27,7 @@ class AuditOrchestrator(Orchestrator):
             super().initialize()
             return
 
-        history, call = self.checkpoint
+        history, batch, _ = self.checkpoint
         # Benchmark cost totals should count only the continuation.
         history = [
             message.model_copy(update={"cost": 0.0})
@@ -50,7 +50,9 @@ class AuditOrchestrator(Orchestrator):
         def propose_once(message, state):
             self.agent.generate_next_message = generate
             proposal = AssistantMessage(
-                role="assistant", tool_calls=[call.model_copy(deep=True)], cost=0.0,
+                role="assistant",
+                tool_calls=[call.model_copy(deep=True) for call in batch],
+                cost=0.0,
             )
             state.messages.extend((message, proposal))
             return proposal, state
@@ -127,7 +129,10 @@ class AuditOrchestrator(Orchestrator):
         }
         if self.inject_wrong_order:
             history, observed = cancellation_context(self.trajectory[:-1])
-            other_order = other_pending_order(arguments["order_id"], observed)
+            other_order = (
+                self.checkpoint[2] if self.checkpoint is not None
+                else other_pending_order(arguments["order_id"], observed)
+            )
             if other_order is None:
                 return False
             arguments["order_id"] = other_order

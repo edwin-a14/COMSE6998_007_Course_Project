@@ -48,11 +48,16 @@ def cancellation_context(messages: list[Message]) -> tuple[list[dict], dict[str,
     return history, observed_status
 
 
-def other_pending_order(order_id: str, observed_status: dict[str, str]) -> str | None:
+def other_pending_order(
+    order_id: str, observed_status: dict[str, str], *, excluded_orders: frozenset[str] = frozenset(),
+) -> str | None:
     if observed_status.get(order_id) != "pending":
         return None
     return next(
-        (key for key, status in observed_status.items() if key != order_id and status == "pending"),
+        (
+            key for key, status in observed_status.items()
+            if key != order_id and key not in excluded_orders and status == "pending"
+        ),
         None,
     )
 

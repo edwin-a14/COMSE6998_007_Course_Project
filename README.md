@@ -239,3 +239,24 @@ wrong-order case when the recorded prefix contains two pending orders. Task
 for customer authorization when interpreting a verdict on the benchmark
 cancellation. Add `--dry-run` to the replay command to inspect labels and rule
 decisions before making model calls.
+
+### Run the held-out task 74 checkpoint
+
+From `tau2-bench`, resume the saved task 74 trace just after the customer
+confirms a laptop exchange and a separate cancellation:
+
+```sh
+out=data/simulations/project-heldout-retail
+for mode in off rules-only semantic hybrid continuous; do
+  uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
+    --task-id 74 --task-split test --seed 43 --max-steps 60 --audit "$mode" \
+    --checkpoint "$out/project-suite-clean-74-seed43-off/results.json" \
+    --output "$out/project-checkpoint-74-seed43-$mode/results.json" || break
+done
+```
+
+The checkpoint restores the recorded tool-call batch, which proposes the
+laptop exchange before the cancellation. It selects an observed pending order
+outside the earlier calls in that batch as the injected cancellation target.
+The run records the injected call, whether it executed successfully, the
+recovery outcome, benchmark reward, and model audit usage for each mode.
