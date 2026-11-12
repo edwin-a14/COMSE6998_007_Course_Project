@@ -102,19 +102,32 @@ uv run --no-sync python -B -m unittest discover \
 
 The existing cancellation faults (`--inject-cancellation-fault`,
 `--inject-wrong-order`) pass D1–D6: an invalid reason is left to the tool, and
-the wrong order is an observed pending order of the same user. Two more faults
-replace the `order_id` of the first valid cancellation with an order from the
-database, and allow one retry on the original order:
+the wrong order is an observed pending order of the same user. Four more faults
+act on the first valid cancellation:
 
-| Flag | Substituted order | Expected rule |
+| Flag | Fault | Expected rule |
 | --- | --- | --- |
-| `--inject-unretrieved-order` | a pending order of the same user, listed by `get_user_details` but never retrieved with `get_order_details` | `D3_record_observed` |
-| `--inject-other-user-order` | a pending order of another user that no message mentions | `D4_grounded_ids` |
+| `--inject-unretrieved-order` | `order_id` becomes a pending order of the same user, listed by `get_user_details` but never retrieved with `get_order_details` | `D3_record_observed` |
+| `--inject-other-user-order` | `order_id` becomes a pending order of another user that no message mentions | `D4_grounded_ids` |
+| `--inject-batched-call` | a `get_order_details` call for the same order is added to the cancellation's batch | `D5_one_call_at_a_time` |
+| `--inject-tool-failure` | every cancellation of that order returns a simulated service error without executing | `D6_repeated_failure` on the third identical attempt |
 
-The unretrieved-order fault is not triggered when the agent has already
-retrieved every listed pending order. Both faults also run with `--audit off`
-as the unaudited baseline. `info.cancellation_recovery.fault_type` names the
-fault; the two existing faults record the same fields as before.
+The first three allow one retry on the original order, as the existing faults
+do; `cancellation_recovery.status` ends as `recovered`, `retry_failed`,
+`no_retry`, or `fault_allowed`. The unretrieved-order fault is not triggered
+when the agent has already retrieved every listed pending order, and the
+batched-call fault is not injected into a batch the agent made itself.
+
+The tool failure cannot be recovered from: the outage lasts for the whole run,
+so the right behavior is to stop retrying and tell the user or transfer. Its
+status is `audit_blocked` once the auditor stops an attempt and `never_blocked`
+otherwise, with `failed_attempts` and `blocked_attempts` counts. Simulated
+failures count toward `max_errors` and, like blocked calls, are dropped from
+the transcript the evaluator replays.
+
+All four faults also run with `--audit off` as the unaudited baseline.
+`info.cancellation_recovery.fault_type` names the fault; the two existing
+faults record the same fields as before.
 
 ```sh
 uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \

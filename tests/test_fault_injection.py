@@ -48,7 +48,9 @@ def orchestrator(dialogue: Dialogue, audit: str | None = "general", **flags) -> 
     """An orchestrator with just the state that tool dispatch reads."""
     orch = AuditOrchestrator.__new__(AuditOrchestrator)
     orch._rejected_calls = {}
+    orch._simulated_failures = set()
     orch._recovery = None
+    orch.num_errors = 0
     orch.trajectory = list(dialogue.messages)
     orch.environment = SimpleNamespace(tools=SimpleNamespace(db=SimpleNamespace(orders=ORDERS)))
     for name, value in flags.items():
@@ -60,16 +62,33 @@ def orchestrator(dialogue: Dialogue, audit: str | None = "general", **flags) -> 
     return orch
 
 
-def propose(orch: AuditOrchestrator, call: ToolCall) -> ToolMessage:
-    """Dispatch one assistant proposal as the τ²-bench orchestrator would."""
-    orch.trajectory.append(AssistantMessage(role="assistant", tool_calls=[call]))
+def propose_batch(orch: AuditOrchestrator, *calls: ToolCall) -> list[ToolMessage]:
+    """Dispatch one assistant proposal as the τ²-bench orchestrator would.
+
+    Like `Orchestrator.step`, it passes the message's own list of calls, and
+    every call in the message must get a result.
+    """
+    message = AssistantMessage(role="assistant", tool_calls=list(calls))
+    orch.trajectory.append(message)
     with patch.object(
         Orchestrator, "_execute_tool_calls",
         lambda self, calls: [ToolMessage(id=calls[0].id, role="tool", content="ok")],
     ):
-        (result,) = orch._execute_tool_calls([call])
-    orch.trajectory.append(result)
-    return result
+        results = orch._execute_tool_calls(message.tool_calls)
+    assert [result.id for result in results] == [call.id for call in message.tool_calls]
+    orch.trajectory.extend(results)
+    return results
+
+
+def propose(orch: AuditOrchestrator, call: ToolCall) -> ToolMessage:
+    return propose_batch(orch, call)[0]
+
+
+def finalize(orch: AuditOrchestrator) -> SimpleNamespace:
+    """Run `_finalize` over the trajectory without the benchmark's own bookkeeping."""
+    run = SimpleNamespace(info=None, messages=None, get_messages=lambda: list(orch.trajectory))
+    with patch.object(Orchestrator, "_finalize", lambda self: run):
+        return orch._finalize()
 
 
 class SubstitutionTest(unittest.TestCase):
@@ -131,6 +150,89 @@ class InjectionTest(unittest.TestCase):
         orch = orchestrator(conversation().look_up(LISTED_ORDER), inject_unretrieved_order=True)
         self.assertFalse(propose(orch, cancel(ORDER, "first")).error)
         self.assertIsNone(orch._recovery)
+
+
+class BatchedCallTest(unittest.TestCase):
+    def test_added_lookup_is_blocked_by_d5_and_recovered(self):
+        orch = orchestrator(conversation(), inject_batched_call=True)
+        cancel_result, lookup_result = propose_batch(orch, cancel(ORDER, "first"))
+        self.assertEqual(orch.before_tool_call.decisions[-1]["rule"], "D5_one_call_at_a_time")
+        self.assertTrue(cancel_result.error)
+        self.assertTrue(lookup_result.error)
+        self.assertIn("earlier call in this batch", lookup_result.content)
+        added = orch.trajectory[-3].tool_calls[1]
+        self.assertEqual((added.name, added.arguments), ("get_order_details", {"order_id": ORDER}))
+        self.assertLessEqual(len(added.id), 40)
+        self.assertEqual(orch._recovery["fault_type"], "batched_call")
+
+        self.assertFalse(propose(orch, cancel(ORDER, "retry")).error)
+        self.assertEqual(orch._recovery["status"], "recovered")
+
+    def test_retry_batched_again_fails(self):
+        orch = orchestrator(conversation(), inject_batched_call=True)
+        propose(orch, cancel(ORDER, "first"))
+        lookup = ToolCall(id="lookup", name="get_order_details", arguments={"order_id": ORDER})
+        propose_batch(orch, cancel(ORDER, "retry"), lookup)
+        self.assertEqual(orch._recovery["status"], "retry_failed")
+
+    def test_not_injected_into_a_batch_the_agent_made(self):
+        orch = orchestrator(conversation(), inject_batched_call=True)
+        lookup = ToolCall(id="lookup", name="get_order_details", arguments={"order_id": ORDER})
+        propose_batch(orch, cancel(ORDER, "first"), lookup)
+        self.assertIsNone(orch._recovery)
+
+    def test_runs_without_an_auditor(self):
+        orch = orchestrator(conversation(), audit=None, inject_batched_call=True)
+        results = propose_batch(orch, cancel(ORDER, "first"))
+        self.assertEqual([result.error for result in results], [False, False])
+        self.assertEqual(orch._recovery["status"], "fault_allowed")
+
+
+class ToolFailureTest(unittest.TestCase):
+    def test_third_identical_attempt_is_blocked_by_d6(self):
+        orch = orchestrator(conversation(), inject_tool_failure=True)
+        for attempt in ("first", "second"):
+            result = propose(orch, cancel(ORDER, attempt))
+            self.assertTrue(result.error)
+            self.assertIn("temporarily unavailable", result.content)
+        self.assertEqual(orch._recovery["status"], "tool_failing")
+
+        self.assertTrue(propose(orch, cancel(ORDER, "third")).error)
+        self.assertEqual(orch.before_tool_call.decisions[-1]["rule"], "D6_repeated_failure")
+        self.assertEqual(orch._recovery["status"], "audit_blocked")
+        self.assertEqual(orch._recovery["failed_attempts"], 2)
+        self.assertEqual(orch._recovery["blocked_attempts"], 1)
+        self.assertEqual(orch.num_errors, 2)
+
+    def test_without_an_auditor_every_attempt_fails(self):
+        orch = orchestrator(conversation(), audit=None, inject_tool_failure=True)
+        for attempt in ("first", "second", "third"):
+            self.assertTrue(propose(orch, cancel(ORDER, attempt)).error)
+        self.assertEqual(orch._recovery["failed_attempts"], 3)
+        self.assertEqual(orch.num_errors, 3)
+        self.assertEqual(finalize(orch).info["cancellation_recovery"]["status"], "never_blocked")
+
+    def test_other_orders_still_work(self):
+        orch = orchestrator(conversation(), inject_tool_failure=True)
+        propose(orch, cancel(ORDER, "first"))
+        self.assertFalse(propose(orch, cancel(OTHER_ORDER, "other")).error)
+
+    def test_failed_and_blocked_cancellations_are_left_out_of_replay(self):
+        orch = orchestrator(conversation(), inject_tool_failure=True)
+        for attempt in ("first", "second", "third"):
+            propose(orch, cancel(ORDER, attempt))
+        run = finalize(orch)
+        replayed = [
+            call.id for message in run.messages
+            for call in getattr(message, "tool_calls", None) or []
+        ]
+        self.assertFalse({"first", "second", "third"} & set(replayed))
+        self.assertFalse(
+            {"first", "second", "third"}
+            & {message.id for message in run.messages if isinstance(message, ToolMessage)}
+        )
+        self.assertEqual(len(run.info["audit_rejections"]), 1)
+        self.assertEqual(run.info["cancellation_recovery"]["status"], "audit_blocked")
 
 
 class ExistingFaultTest(unittest.TestCase):

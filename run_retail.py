@@ -58,6 +58,16 @@ def main(argv: list[str] | None = None) -> None:
         "mentions, and allow one retry",
     )
     faults.add_argument(
+        "--inject-batched-call", action="store_true",
+        help="Add an order lookup to the batch of the first valid cancellation, and "
+        "allow one retry",
+    )
+    faults.add_argument(
+        "--inject-tool-failure", action="store_true",
+        help="Fail every cancellation of the first validly cancelled order with a "
+        "simulated service error",
+    )
+    faults.add_argument(
         "--checkpoint", type=Path,
         help="Resume before a recorded cancellation and inject the wrong order",
     )
@@ -188,6 +198,8 @@ def main(argv: list[str] | None = None) -> None:
     orchestrator.inject_wrong_order = args.inject_wrong_order or checkpoint is not None
     orchestrator.inject_unretrieved_order = args.inject_unretrieved_order
     orchestrator.inject_other_user_order = args.inject_other_user_order
+    orchestrator.inject_batched_call = args.inject_batched_call
+    orchestrator.inject_tool_failure = args.inject_tool_failure
     orchestrator.checkpoint = checkpoint
     orchestrator.recovery_enabled = not args.no_recovery
 
