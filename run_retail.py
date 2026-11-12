@@ -17,7 +17,9 @@ from tau2.runner import (
 from tau2.user.user_simulator import UserSimulator
 
 from replay_cancellation_audit import cancellation_prefix
-from semantic_audit import audit_tool_call, cancellation_context, other_pending_order
+from semantic_audit import (
+    audit_tool_call, cancellation_context, other_pending_order, should_audit_tool,
+)
 from tau2_audit import AuditOrchestrator, retail_cancellation_block_reason
 
 
@@ -120,10 +122,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     def semantic_block_reason(call: ToolCall) -> str | None:
-        if call.requestor != "assistant":
-            return None
-        cancellation = call.name == "cancel_pending_order"
-        if not cancellation and args.audit != "continuous":
+        if not should_audit_tool(args.audit, call):
             return None
         verdict = audit_tool_call(
             args.audit_llm, orchestrator.trajectory[:-1], call, tool_definitions.get(call.name),
@@ -132,7 +131,7 @@ def main(argv: list[str] | None = None) -> None:
         if verdict["verdict"] == "allow":
             return None
         feedback = f"Semantic audit {verdict['verdict']}: {verdict['reason']}"
-        if cancellation:
+        if call.name == "cancel_pending_order":
             return (
                 feedback + " No cancellation was executed. Check which order and reason "
                 "the customer already authorized, and ask only for anything still missing."

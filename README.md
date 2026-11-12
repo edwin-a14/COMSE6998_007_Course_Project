@@ -159,3 +159,20 @@ reward, audit call counts, tokens, and latency.
 To include continuous auditing in the checkpoint comparison, add
 `continuous` to the loop's mode list. Only calls proposed after the checkpoint
 contribute to that run's audit counts.
+
+### Replay both modes on the same tool proposals
+
+From `tau2-bench`, pass saved retail traces to the replay command:
+
+```sh
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/replay_tool_audit.py \
+  data/simulations/project-suite-clean-69-seed43-off/results.json \
+  data/simulations/retail-baseline-88-seed43/results.json
+```
+
+Each proposal uses the recorded dialogue and tool results from before its
+batch. The report includes each verdict, audit call counts, input and output
+tokens, and summed audit latency. The trace's recorded tool errors provide
+context for interpreting verdicts. Replay checks proposals without executing
+tools or changing the saved conversation. Add `--dry-run` to see the planned
+checks without model calls.

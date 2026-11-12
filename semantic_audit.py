@@ -16,6 +16,13 @@ class AuditVerdict(BaseModel):
     reason: str
 
 
+def should_audit_tool(mode: str, call: ToolCall) -> bool:
+    return call.requestor == "assistant" and (
+        mode == "continuous"
+        or (mode == "semantic" and call.name == "cancel_pending_order")
+    )
+
+
 def cancellation_context(messages: list[Message]) -> tuple[list[dict], dict[str, str]]:
     """Summarize dialogue and order lookups from a pre-dispatch message prefix."""
     history = []
