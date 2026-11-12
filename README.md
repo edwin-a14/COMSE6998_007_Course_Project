@@ -140,3 +140,22 @@ Check that `evidence_sha256` and the injected arguments in
 verdicts, executed writes, recovery status, and reward. The step limit and
 agent and user model costs apply to the continuation. Semantic audit tokens
 and latency are recorded in `info.semantic_checks`.
+
+### Compare selective and continuous auditing
+
+From `tau2-bench`, run both modes on full retail conversations:
+
+```sh
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail_suite.py \
+  --tasks 69 88 --modes semantic continuous --conditions clean
+```
+
+Both modes use the same cancellation prompt, audit model, and recovery
+behavior. Continuous mode also reviews lookups and other tool proposals before
+dispatch. It receives the proposed tool's definition and earlier dialogue and
+tool results, with each result capped at 4,000 characters. The suite reports
+reward, audit call counts, tokens, and latency.
+
+To include continuous auditing in the checkpoint comparison, add
+`continuous` to the loop's mode list. Only calls proposed after the checkpoint
+contribute to that run's audit counts.

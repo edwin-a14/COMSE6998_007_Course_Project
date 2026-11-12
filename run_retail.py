@@ -17,13 +17,15 @@ from tau2.runner import (
 from tau2.user.user_simulator import UserSimulator
 
 from replay_cancellation_audit import cancellation_prefix
-from semantic_audit import audit_cancellation, cancellation_context, other_pending_order
+from semantic_audit import audit_tool_call, cancellation_context, other_pending_order
 from tau2_audit import AuditOrchestrator, retail_cancellation_block_reason
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--audit", choices=("off", "deterministic", "semantic"), default="off")
+    parser.add_argument(
+        "--audit", choices=("off", "deterministic", "semantic", "continuous"), default="off",
+    )
     parser.add_argument("--audit-llm", default="openai/gpt-4.1-mini")
     faults = parser.add_mutually_exclusive_group()
     faults.add_argument(
@@ -112,24 +114,34 @@ def main(argv: list[str] | None = None) -> None:
         max_errors=config.max_errors,
     )
     semantic_checks = []
+    tool_definitions = (
+        {tool.name: tool.openai_schema["function"] for tool in environment.get_tools()}
+        if args.audit == "continuous" else {}
+    )
 
     def semantic_block_reason(call: ToolCall) -> str | None:
-        if call.requestor != "assistant" or call.name != "cancel_pending_order":
+        if call.requestor != "assistant":
             return None
-        history, _ = cancellation_context(orchestrator.trajectory[:-1])
-        verdict = audit_cancellation(args.audit_llm, history, call)
+        cancellation = call.name == "cancel_pending_order"
+        if not cancellation and args.audit != "continuous":
+            return None
+        verdict = audit_tool_call(
+            args.audit_llm, orchestrator.trajectory[:-1], call, tool_definitions.get(call.name),
+        )
         semantic_checks.append({"call": call.model_dump(mode="json"), **verdict})
         if verdict["verdict"] == "allow":
             return None
-        return (
-            f"Semantic audit {verdict['verdict']}: {verdict['reason']} "
-            "No cancellation was executed. Check which order and reason the customer "
-            "already authorized, and ask only for anything still missing."
-        )
+        feedback = f"Semantic audit {verdict['verdict']}: {verdict['reason']}"
+        if cancellation:
+            return (
+                feedback + " No cancellation was executed. Check which order and reason "
+                "the customer already authorized, and ask only for anything still missing."
+            )
+        return feedback + " Review the request and earlier tool results before proposing the next action."
 
     if args.audit == "deterministic":
         orchestrator.before_tool_call = retail_cancellation_block_reason
-    elif args.audit == "semantic":
+    elif args.audit in ("semantic", "continuous"):
         orchestrator.before_tool_call = semantic_block_reason
     orchestrator.inject_cancellation_fault = args.inject_cancellation_fault
     orchestrator.inject_wrong_order = args.inject_wrong_order or checkpoint is not None
@@ -142,7 +154,7 @@ def main(argv: list[str] | None = None) -> None:
     simulation.info = {**(simulation.info or {}), "audit_mode": args.audit}
     if checkpoint is not None:
         simulation.info["checkpoint_trace"] = str(args.checkpoint)
-    if args.audit == "semantic":
+    if args.audit in ("semantic", "continuous"):
         simulation.info.update(audit_model=args.audit_llm, semantic_checks=semantic_checks)
     results = Results(info=info, tasks=[task], simulations=[simulation])
     with args.output.open("x", encoding="utf-8") as output:
