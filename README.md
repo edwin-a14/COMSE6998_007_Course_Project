@@ -260,3 +260,25 @@ laptop exchange before the cancellation. It selects an observed pending order
 outside the earlier calls in that batch as the injected cancellation target.
 The run records the injected call, whether it executed successfully, the
 recovery outcome, benchmark reward, and model audit usage for each mode.
+
+### Measure the effect of the recovery retry
+
+From `tau2-bench`, rerun the same held-out checkpoint with hybrid auditing
+and recovery disabled:
+
+```sh
+out=data/simulations/project-heldout-retail
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
+  --task-id 74 --task-split test --seed 43 --max-steps 60 --audit hybrid \
+  --checkpoint "$out/project-suite-clean-74-seed43-off/results.json" \
+  --no-recovery \
+  --output "$out/project-checkpoint-74-seed43-hybrid-no-recovery/results.json"
+```
+
+Compare with `project-checkpoint-74-seed43-hybrid/results.json`. Match the
+evidence hash and injected arguments in `info.cancellation_recovery`, then
+compare the reward, database match, and dispatched calls. When the auditor
+blocks the injected cancellation, `--no-recovery` ends the run before the next
+agent turn. The result records `blocked_no_retry` and uses the benchmark's
+`too_many_errors` termination reason. The earlier laptop exchange still
+contributes to the final state.

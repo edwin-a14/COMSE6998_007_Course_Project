@@ -18,6 +18,7 @@ class AuditOrchestrator(Orchestrator):
     before_tool_call: Callable[[ToolCall], str | None] | None = None
     inject_cancellation_fault = False
     inject_wrong_order = False
+    recovery_enabled = True
     checkpoint: tuple[list[Message], list[ToolCall], str] | None = None
 
     def initialize(self) -> None:
@@ -104,7 +105,9 @@ class AuditOrchestrator(Orchestrator):
                 continue
 
             blocked = True
-            if retry:
+            if injected and not self.recovery_enabled:
+                self._recovery["status"] = "blocked_no_retry"
+            elif retry:
                 self._recovery["status"] = "retry_failed"
             self._rejected_calls[tool_call.id] = {
                 "call": tool_call.model_dump(mode="json"),
@@ -149,7 +152,9 @@ class AuditOrchestrator(Orchestrator):
 
     def _check_termination(self) -> None:
         super()._check_termination()
-        if self._recovery is not None and self._recovery["status"] == "retry_failed":
+        if self._recovery is not None and self._recovery["status"] in (
+            "blocked_no_retry", "retry_failed",
+        ):
             self.done = True
             self.termination_reason = TerminationReason.TOO_MANY_ERRORS
 

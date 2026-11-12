@@ -47,6 +47,10 @@ def main(argv: list[str] | None = None) -> None:
         "--checkpoint", type=Path,
         help="Resume before a recorded cancellation and inject the wrong order",
     )
+    parser.add_argument(
+        "--no-recovery", action="store_true",
+        help="End the checkpoint run if the injected cancellation is blocked",
+    )
     parser.add_argument("--task-id", default="88")
     parser.add_argument("--task-split", choices=("train", "test", "base"), default="train")
     parser.add_argument("--agent-llm", default="openai/gpt-4.1-mini")
@@ -59,6 +63,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(f"Output already exists: {args.output}")
     if args.max_steps < 1:
         parser.error("--max-steps must be positive")
+    if args.no_recovery and args.checkpoint is None:
+        parser.error("--no-recovery requires --checkpoint")
     if args.inject_cancellation_fault and args.audit not in ("deterministic", *RULE_AUDIT_MODES):
         parser.error("--inject-cancellation-fault requires --audit deterministic, rules-only, or hybrid")
     config = TextRunConfig(
@@ -163,6 +169,7 @@ def main(argv: list[str] | None = None) -> None:
     orchestrator.inject_cancellation_fault = args.inject_cancellation_fault
     orchestrator.inject_wrong_order = args.inject_wrong_order or checkpoint is not None
     orchestrator.checkpoint = checkpoint
+    orchestrator.recovery_enabled = not args.no_recovery
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     info = get_info(config)
@@ -173,6 +180,7 @@ def main(argv: list[str] | None = None) -> None:
     }
     if checkpoint is not None:
         simulation.info["checkpoint_trace"] = str(args.checkpoint)
+        simulation.info["recovery_enabled"] = orchestrator.recovery_enabled
     if args.audit in ("semantic", "continuous", "hybrid"):
         simulation.info.update(audit_model=args.audit_llm, semantic_checks=semantic_checks)
     if args.audit in RULE_AUDIT_MODES:
