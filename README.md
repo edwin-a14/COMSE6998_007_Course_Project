@@ -98,6 +98,30 @@ uv run --no-sync python -B -m unittest discover \
   -s ../COMSE6998_007_Course_Project/tests -t ../COMSE6998_007_Course_Project
 ```
 
+#### Faults aimed at the general rules
+
+The existing cancellation faults (`--inject-cancellation-fault`,
+`--inject-wrong-order`) pass D1–D6: an invalid reason is left to the tool, and
+the wrong order is an observed pending order of the same user. Two more faults
+replace the `order_id` of the first valid cancellation with an order from the
+database, and allow one retry on the original order:
+
+| Flag | Substituted order | Expected rule |
+| --- | --- | --- |
+| `--inject-unretrieved-order` | a pending order of the same user, listed by `get_user_details` but never retrieved with `get_order_details` | `D3_record_observed` |
+| `--inject-other-user-order` | a pending order of another user that no message mentions | `D4_grounded_ids` |
+
+The unretrieved-order fault is not triggered when the agent has already
+retrieved every listed pending order. Both faults also run with `--audit off`
+as the unaudited baseline. `info.cancellation_recovery.fault_type` names the
+fault; the two existing faults record the same fields as before.
+
+```sh
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
+  --audit deterministic-general --inject-unretrieved-order \
+  --output data/simulations/project-general-88-unretrieved/results.json
+```
+
 ### Compare the same wrong-order fault across audit modes
 
 From `tau2-bench`:

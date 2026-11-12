@@ -1,8 +1,9 @@
 """Pre-dispatch hook for the pinned τ²-bench text orchestrator."""
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping
 from hashlib import sha256
+from typing import Any
 
 from tau2.data_model.message import AssistantMessage, Message, ToolCall, ToolMessage, UserMessage
 from tau2.data_model.simulation import SimulationRun, TerminationReason
@@ -18,8 +19,25 @@ class AuditOrchestrator(Orchestrator):
     before_tool_call: Callable[[ToolCall], str | None] | None = None
     inject_cancellation_fault = False
     inject_wrong_order = False
+    inject_unretrieved_order = False
+    inject_other_user_order = False
     recovery_enabled = True
     checkpoint: tuple[list[Message], list[ToolCall], str] | None = None
+
+    @property
+    def fault_type(self) -> str | None:
+        """The enabled fault. Flags are checked in this order if several are set."""
+        flags = {
+            "wrong_order": self.inject_wrong_order,
+            "invalid_reason": self.inject_cancellation_fault,
+            "unretrieved_order": self.inject_unretrieved_order,
+            "other_user_order": self.inject_other_user_order,
+        }
+        return next((fault for fault, enabled in flags.items() if enabled), None)
+
+    def _is_fault_target(self, tool_call: ToolCall) -> bool:
+        """Whether a fault can be injected into this call, or this call can retry one."""
+        return tool_call.requestor == "assistant" and tool_call.name == "cancel_pending_order"
 
     def initialize(self) -> None:
         self._rejected_calls: dict[str, dict] = {}
@@ -62,7 +80,10 @@ class AuditOrchestrator(Orchestrator):
 
     def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolMessage]:
         audit = self.before_tool_call
-        if audit is None and not self.inject_wrong_order:
+        fault = self.fault_type
+        # An invalid reason is only injected under an auditor. Order faults also
+        # run unaudited, as the no-audit baseline.
+        if audit is None and fault in (None, "invalid_reason"):
             return super()._execute_tool_calls(tool_calls)
 
         results = []
@@ -74,12 +95,7 @@ class AuditOrchestrator(Orchestrator):
             )
             retry = False
             injected = False
-            if (
-                (self.inject_cancellation_fault or self.inject_wrong_order)
-                and not blocked
-                and tool_call.requestor == "assistant"
-                and tool_call.name == "cancel_pending_order"
-            ):
+            if fault is not None and not blocked and self._is_fault_target(tool_call):
                 if self._recovery is None and retail_cancellation_block_reason(tool_call) is None:
                     injected = self._inject_fault(tool_call)
                 elif self._recovery is not None and self._recovery["status"] == "awaiting_retry":
@@ -125,12 +141,21 @@ class AuditOrchestrator(Orchestrator):
         return results
 
     def _inject_fault(self, call: ToolCall) -> bool:
+        fault = self.fault_type
         arguments = dict(call.arguments)
         recovery = {
             "status": "awaiting_retry",
             "original_call": call.model_dump(mode="json"),
         }
-        if self.inject_wrong_order:
+        if fault in ORDER_SUBSTITUTIONS:
+            substitute = ORDER_SUBSTITUTIONS[fault](
+                self.trajectory[:-1], arguments["order_id"], self.environment.tools.db.orders,
+            )
+            if substitute is None:
+                return False
+            arguments["order_id"] = substitute
+            recovery["fault_type"] = fault
+        elif fault == "wrong_order":
             history, observed = cancellation_context(self.trajectory[:-1])
             other_order = (
                 self.checkpoint[2] if self.checkpoint is not None
@@ -160,7 +185,7 @@ class AuditOrchestrator(Orchestrator):
 
     def _finalize(self) -> SimulationRun:
         run = super()._finalize()
-        if self.inject_cancellation_fault or self.inject_wrong_order:
+        if self.fault_type is not None:
             recovery = self._recovery or {"status": "not_triggered"}
             if recovery["status"] == "awaiting_retry":
                 recovery["status"] = "no_retry"
@@ -223,3 +248,82 @@ def retail_argument_block_reason(call: ToolCall) -> str | None:
         if not isinstance(zip_code, str) or not zip_code.strip():
             return "Provide the customer's ZIP code before retrying the name lookup."
     return retail_cancellation_block_reason(call)
+
+
+def _tool_results(messages: list[Message], tool_name: str) -> Iterator[dict]:
+    """Successful JSON object results of one tool, in conversation order."""
+    calls = set()
+    for message in messages:
+        if isinstance(message, (AssistantMessage, UserMessage)):
+            calls.update(call.id for call in message.tool_calls or [] if call.name == tool_name)
+        elif isinstance(message, ToolMessage) and message.id in calls and not message.error:
+            try:
+                result = json.loads(message.content or "")
+            except json.JSONDecodeError:
+                continue
+            if isinstance(result, dict):
+                yield result
+
+
+def unretrieved_own_order(
+    messages: list[Message], order_id: str, orders: Mapping[str, Any],
+) -> str | None:
+    """A pending order of the same user that a tool result lists but no lookup retrieved.
+
+    The id is grounded in the conversation, so only a check that the record was
+    retrieved before the write (D3) catches the substitution.
+    """
+    if order_id not in orders:
+        return None
+    owner = orders[order_id].user_id
+    retrieved = {result.get("order_id") for result in _tool_results(messages, "get_order_details")}
+    listed = (
+        listed_id
+        for result in _tool_results(messages, "get_user_details")
+        if result.get("user_id") == owner
+        for listed_id in result.get("orders") or []
+    )
+    return next(
+        (
+            listed_id for listed_id in listed
+            if listed_id != order_id and listed_id not in retrieved
+            and listed_id in orders and orders[listed_id].user_id == owner
+            and orders[listed_id].status == "pending"
+        ),
+        None,
+    )
+
+
+def unseen_other_user_order(
+    messages: list[Message], order_id: str, orders: Mapping[str, Any],
+) -> str | None:
+    """A pending order of another user that no message in the conversation mentions.
+
+    The id has no source in the conversation, so a grounding check (D4) catches it.
+    """
+    if order_id not in orders:
+        return None
+    owner = orders[order_id].user_id
+    texts = []
+    for message in messages:
+        texts.append(message.content or "")
+        texts.extend(
+            json.dumps(call.arguments)
+            for call in getattr(message, "tool_calls", None) or []
+        )
+    seen = "\n".join(texts)
+    return next(
+        (
+            other for other in sorted(orders)
+            if orders[other].user_id != owner and orders[other].status == "pending"
+            and other.lstrip("#") not in seen
+        ),
+        None,
+    )
+
+
+# Faults that replace the order id with another order chosen from the database.
+ORDER_SUBSTITUTIONS: dict[str, Callable[[list[Message], str, Mapping[str, Any]], str | None]] = {
+    "unretrieved_order": unretrieved_own_order,
+    "other_user_order": unseen_other_user_order,
+}

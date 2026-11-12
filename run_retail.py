@@ -48,6 +48,16 @@ def main(argv: list[str] | None = None) -> None:
         help="Substitute another observed pending order and allow one retry",
     )
     faults.add_argument(
+        "--inject-unretrieved-order", action="store_true",
+        help="Substitute a pending order of the same user that was listed but never "
+        "retrieved, and allow one retry",
+    )
+    faults.add_argument(
+        "--inject-other-user-order", action="store_true",
+        help="Substitute a pending order of another user that the conversation never "
+        "mentions, and allow one retry",
+    )
+    faults.add_argument(
         "--checkpoint", type=Path,
         help="Resume before a recorded cancellation and inject the wrong order",
     )
@@ -176,6 +186,8 @@ def main(argv: list[str] | None = None) -> None:
         orchestrator.before_tool_call = audit_block_reason
     orchestrator.inject_cancellation_fault = args.inject_cancellation_fault
     orchestrator.inject_wrong_order = args.inject_wrong_order or checkpoint is not None
+    orchestrator.inject_unretrieved_order = args.inject_unretrieved_order
+    orchestrator.inject_other_user_order = args.inject_other_user_order
     orchestrator.checkpoint = checkpoint
     orchestrator.recovery_enabled = not args.no_recovery
 
@@ -205,7 +217,7 @@ def main(argv: list[str] | None = None) -> None:
         f"termination={simulation.termination_reason.value}, "
         f"rejected proposals={rejections}"
     )
-    if args.inject_cancellation_fault or orchestrator.inject_wrong_order:
+    if orchestrator.fault_type is not None:
         print(f'Cancellation recovery: {simulation.info["cancellation_recovery"]["status"]}')
     if semantic_checks:
         print("Semantic verdicts: " + ", ".join(check["verdict"] for check in semantic_checks))
