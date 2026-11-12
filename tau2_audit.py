@@ -4,8 +4,9 @@ import json
 from collections.abc import Callable
 from hashlib import sha256
 
-from tau2.data_model.message import AssistantMessage, ToolCall, ToolMessage, UserMessage
+from tau2.data_model.message import AssistantMessage, Message, ToolCall, ToolMessage, UserMessage
 from tau2.data_model.simulation import SimulationRun, TerminationReason
+from tau2.data_model.tasks import InitialState
 from tau2.orchestrator.orchestrator import Orchestrator
 
 from semantic_audit import cancellation_context, other_pending_order
@@ -15,11 +16,44 @@ class AuditOrchestrator(Orchestrator):
     before_tool_call: Callable[[ToolCall], str | None] | None = None
     inject_cancellation_fault = False
     inject_wrong_order = False
+    checkpoint: tuple[list[Message], ToolCall] | None = None
 
     def initialize(self) -> None:
         self._rejected_calls: dict[str, dict] = {}
         self._recovery: dict | None = None
-        super().initialize()
+        if self.checkpoint is None:
+            super().initialize()
+            return
+
+        history, call = self.checkpoint
+        # Benchmark cost totals should count only the continuation.
+        history = [
+            message.model_copy(update={"cost": 0.0})
+            if isinstance(message, (AssistantMessage, UserMessage)) else message
+            for message in history
+        ]
+        task = self.task
+        initial_state = task.initial_state or InitialState()
+        self.task = task.model_copy(update={
+            "initial_state": initial_state.model_copy(update={"message_history": history}),
+        })
+        try:
+            super().initialize()
+        finally:
+            # Score the full trajectory against the original benchmark task.
+            self.task = task
+
+        generate = self.agent.generate_next_message
+
+        def propose_once(message, state):
+            self.agent.generate_next_message = generate
+            proposal = AssistantMessage(
+                role="assistant", tool_calls=[call.model_copy(deep=True)], cost=0.0,
+            )
+            state.messages.extend((message, proposal))
+            return proposal, state
+
+        self.agent.generate_next_message = propose_once
 
     def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolMessage]:
         audit = self.before_tool_call

@@ -119,3 +119,24 @@ Review clean rejections against the conversation before classifying them as
 false blocks. On injected trials, keep `not_triggered` separate from runs where
 the fault was injected. The table reports native reward, termination, tool and
 recovery outcomes, and semantic audit tokens and latency.
+
+### Compare audit modes from a saved checkpoint
+
+From `tau2-bench`, start each mode from the same task 69 conversation just before
+the cancellation. The runner forces one wrong-order proposal and uses live
+participants for the following turns.
+
+```sh
+for mode in off deterministic semantic; do
+  uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
+    --task-id 69 --seed 43 --max-steps 60 --audit "$mode" \
+    --checkpoint data/simulations/project-suite-clean-69-seed43-off/results.json \
+    --output "data/simulations/project-checkpoint-69-seed43-$mode/results.json" || break
+done
+```
+
+Check that `evidence_sha256` and the injected arguments in
+`info.cancellation_recovery` match across the three files. Compare the audit
+verdicts, executed writes, recovery status, and reward. The step limit and
+agent and user model costs apply to the continuation. Semantic audit tokens
+and latency are recorded in `info.semantic_checks`.

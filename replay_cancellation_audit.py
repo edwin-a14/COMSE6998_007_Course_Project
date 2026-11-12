@@ -5,15 +5,15 @@ import json
 from pathlib import Path
 from time import perf_counter
 
-from tau2.data_model.message import AssistantMessage, ToolCall
+from tau2.data_model.message import AssistantMessage, Message, ToolCall
 from tau2.data_model.simulation import Results
 
 from semantic_audit import audit_cancellation, cancellation_context, other_pending_order
 from tau2_audit import retail_cancellation_block_reason
 
 
-def replay_inputs(trace: Path) -> tuple[list[dict], ToolCall, ToolCall]:
-    """Extract dialogue and observed order status before the first cancellation."""
+def cancellation_prefix(trace: Path) -> tuple[str, list[Message], ToolCall]:
+    """Find the first assistant cancellation and the messages before it."""
     (simulation,) = Results.load(trace).simulations
     messages = simulation.get_messages()
     for index, message in enumerate(messages):
@@ -22,15 +22,21 @@ def replay_inputs(trace: Path) -> tuple[list[dict], ToolCall, ToolCall]:
         for call in message.tool_calls or []:
             if call.name != "cancel_pending_order":
                 continue
-            history, observed = cancellation_context(messages[:index])
-            other_id = other_pending_order(call.arguments["order_id"], observed)
-            if other_id is None:
-                raise ValueError("The trace needs two observed pending orders")
-            wrong_order = call.model_copy(update={
-                "arguments": {**call.arguments, "order_id": other_id},
-            })
-            return history, call, wrong_order
+            return simulation.task_id, messages[:index], call
     raise ValueError("The trace has no cancellation proposal")
+
+
+def replay_inputs(trace: Path) -> tuple[list[dict], ToolCall, ToolCall]:
+    """Extract dialogue and observed order status before the first cancellation."""
+    _, messages, call = cancellation_prefix(trace)
+    history, observed = cancellation_context(messages)
+    other_id = other_pending_order(call.arguments["order_id"], observed)
+    if other_id is None:
+        raise ValueError("The trace needs two observed pending orders")
+    wrong_order = call.model_copy(update={
+        "arguments": {**call.arguments, "order_id": other_id},
+    })
+    return history, call, wrong_order
 
 
 def main() -> int:
