@@ -99,6 +99,11 @@ uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
 uv run --no-sync python -B ../COMSE6998_007_Course_Project/replay_deterministic_audit.py \
   data/simulations/*/results.json
 
+# Compare clean runs laid out as <root>/{off,deterministic-general}/task<ID>/results.json:
+# blocks by rule, whether each blocked call was an expected action, and rewards
+uv run --no-sync python -B ../COMSE6998_007_Course_Project/summarize_general_audit.py \
+  data/simulations/fp-test
+
 # Unit tests
 uv run --no-sync python -B -m unittest discover \
   -s ../COMSE6998_007_Course_Project/tests -t ../COMSE6998_007_Course_Project
