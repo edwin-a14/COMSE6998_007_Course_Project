@@ -4,6 +4,10 @@ Each time the assistant proposes a write tool call, the auditor rebuilds a fact
 table from the conversation before that proposal and checks policy rules that
 the domain tools do not enforce themselves. Checks the tools already make, such
 as order status or a valid cancellation reason, are left to the tools.
+
+Writes may only touch the session user's records: the first user an
+authentication tool returns. Authenticating someone else later grants nothing,
+since the agent may help only one user per conversation.
 """
 
 import json
@@ -52,7 +56,10 @@ DOMAIN_CONFIGS = {
 class Facts:
     """What the conversation establishes, from tool results and user messages."""
 
-    authenticated_users: set[str] = field(default_factory=set)
+    session_user: str | None = None
+    """First user id an authentication tool returned. Fixed for the conversation."""
+    other_users: list[str] = field(default_factory=list)
+    """Other user ids authenticated later. Recorded only; they grant nothing."""
     records: dict[str, dict[str, dict]] = field(default_factory=dict)
     """Write argument -> record id -> {"owner", "status"}."""
     failures: Counter = field(default_factory=Counter)
@@ -68,7 +75,8 @@ class Facts:
 
     def snapshot(self) -> dict:
         return {
-            "authenticated_users": sorted(self.authenticated_users),
+            "session_user": self.session_user,
+            "other_users": self.other_users,
             "records": self.records,
             "failures": [
                 {"tool": name, "arguments": json.loads(arguments), "count": count}
@@ -121,7 +129,10 @@ def _parse(content: str) -> Any:
 
 def _record_result(facts: Facts, config: DomainConfig, call: ToolCall, result: Any) -> None:
     if call.name in config.auth_tools and isinstance(result, str):
-        facts.authenticated_users.add(result)
+        if facts.session_user is None:
+            facts.session_user = result
+        elif result != facts.session_user and result not in facts.other_users:
+            facts.other_users.append(result)
     for arg, lookup in config.record_lookups.items():
         if call.name != lookup or not isinstance(result, dict):
             continue
@@ -159,7 +170,7 @@ def one_call_at_a_time(call: ToolCall, facts: Facts, batch: list[ToolCall], conf
 
 
 def authenticated(call: ToolCall, facts: Facts, batch: list[ToolCall], config: DomainConfig) -> str | None:
-    if facts.authenticated_users:
+    if facts.session_user is not None:
         return None
     tools = " or ".join(sorted(config.auth_tools))
     return (
@@ -200,17 +211,18 @@ def owned_by_user(call: ToolCall, facts: Facts, batch: list[ToolCall], config: D
         value = call.arguments.get(arg)
         record = facts.records.get(arg, {}).get(value) if isinstance(value, str) else None
         owner = record["owner"] if record else None
-        if owner and owner not in facts.authenticated_users:
+        if owner and owner != facts.session_user:
             return (
-                f"{arg} {value} belongs to a different user than the authenticated "
-                "one, so this call was not executed. Only act on the authenticated "
-                "user's records."
+                f"{arg} {value} belongs to a different user than the one authenticated "
+                "first in this conversation, so this call was not executed. Only one "
+                "user can be helped per conversation: act only on that user's records."
             )
     user = call.arguments.get(config.user_arg)
-    if user is not None and user not in facts.authenticated_users:
+    if user is not None and user != facts.session_user:
         return (
-            f"{config.user_arg} {user} is not the authenticated user, so this call was "
-            "not executed. Only act on the authenticated user's account."
+            f"{config.user_arg} {user} is not the user authenticated first in this "
+            "conversation, so this call was not executed. Only one user can be helped "
+            "per conversation: act only on that user's account."
         )
     return None
 

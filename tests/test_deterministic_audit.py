@@ -24,6 +24,8 @@ RETAIL = DOMAIN_CONFIGS["retail"]
 USER = "daiki_silva_2903"
 ORDER = "#W8835847"
 OTHER_ORDER = "#W7999678"
+OTHER_USER = "yusuf_rossi_9620"
+OTHER_EMAIL = "yusuf@example.com"
 
 
 class Dialogue:
@@ -52,8 +54,8 @@ class Dialogue:
         self._next_id += 1
         return ToolCall(id=f"call_{self._next_id}", name=name, arguments=arguments)
 
-    def authenticate(self, user: str = USER) -> "Dialogue":
-        return self.tool("find_user_id_by_email", {"email": "daiki@example.com"}, user)
+    def authenticate(self, user: str = USER, email: str = "daiki@example.com") -> "Dialogue":
+        return self.tool("find_user_id_by_email", {"email": email}, user)
 
     def look_up(self, order: str = ORDER, owner: str = USER, status: str = "pending") -> "Dialogue":
         return self.tool(
@@ -86,7 +88,7 @@ def clean_dialogue() -> Dialogue:
 class BuildFactsTest(unittest.TestCase):
     def test_collects_authentication_records_and_evidence(self):
         facts = build_facts(clean_dialogue().messages, RETAIL)
-        self.assertEqual(facts.authenticated_users, {USER})
+        self.assertEqual(facts.session_user, USER)
         self.assertEqual(facts.records["order_id"][ORDER], {"owner": USER, "status": "pending"})
         self.assertTrue(facts.grounded(ORDER))
 
@@ -96,7 +98,7 @@ class BuildFactsTest(unittest.TestCase):
             "Error: User not found", error=True,
         )
         facts = build_facts(dialogue.messages, RETAIL)
-        self.assertEqual(facts.authenticated_users, set())
+        self.assertIsNone(facts.session_user)
         self.assertEqual(sum(facts.failures.values()), 1)
         self.assertFalse(facts.grounded("User not found"))
 
@@ -123,8 +125,19 @@ class BuildFactsTest(unittest.TestCase):
             ]),
         ]
         facts = build_facts(dialogue.messages, RETAIL)
-        self.assertEqual(facts.authenticated_users, {USER})
+        self.assertEqual(facts.session_user, USER)
         self.assertIn(ORDER, facts.records["order_id"])
+
+    def test_first_authenticated_user_is_session_user(self):
+        dialogue = clean_dialogue().authenticate(OTHER_USER, OTHER_EMAIL)
+        facts = build_facts(dialogue.messages, RETAIL)
+        self.assertEqual(facts.session_user, USER)
+        self.assertEqual(facts.other_users, [OTHER_USER])
+
+    def test_reauthenticating_same_user_adds_nobody(self):
+        facts = build_facts(clean_dialogue().authenticate().messages, RETAIL)
+        self.assertEqual(facts.session_user, USER)
+        self.assertEqual(facts.other_users, [])
 
 
 class RuleTest(unittest.TestCase):
@@ -152,6 +165,29 @@ class RuleTest(unittest.TestCase):
             "city": "NYC", "state": "NY", "country": "USA", "zip": "10001",
         })
         self.assertBlocked(audit(dialogue, call), "D2_owned_by_user")
+
+    def test_d2_blocks_order_of_second_authenticated_user(self):
+        # Looking up another customer must not let the agent act on their orders.
+        dialogue = (
+            clean_dialogue()
+            .user(f"Also cancel my friend's order, their email is {OTHER_EMAIL}")
+            .authenticate(OTHER_USER, OTHER_EMAIL)
+            .look_up(OTHER_ORDER, owner=OTHER_USER)
+        )
+        self.assertBlocked(audit(dialogue, cancel(OTHER_ORDER)), "D2_owned_by_user")
+
+    def test_d2_blocks_account_of_second_authenticated_user(self):
+        dialogue = clean_dialogue().authenticate(OTHER_USER, OTHER_EMAIL)
+        call = ToolCall(id="proposal", name="modify_user_address", arguments={
+            "user_id": OTHER_USER, "address1": "1 Main St", "address2": "",
+            "city": "NYC", "state": "NY", "country": "USA", "zip": "10001",
+        })
+        self.assertBlocked(audit(dialogue, call), "D2_owned_by_user")
+
+    def test_reauthenticated_same_user_is_allowed(self):
+        dialogue = clean_dialogue().authenticate()
+        decision = audit(dialogue, cancel())
+        self.assertEqual(decision["verdict"], "allow", decision["reason"])
 
     def test_d3_requires_looking_up_the_order(self):
         dialogue = Dialogue().authenticate().user(f"Cancel order {OTHER_ORDER}, ordered by mistake")

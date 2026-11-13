@@ -73,7 +73,7 @@ tools do not enforce:
 | Rule | Fires on a write call when | Effect |
 | --- | --- | --- |
 | `D1_authenticated` | no user has been authenticated | block |
-| `D2_owned_by_user` | the target order or account belongs to another user | block |
+| `D2_owned_by_user` | the target order or account does not belong to the session user | block |
 | `D3_record_observed` | the target order was never retrieved | block |
 | `D4_grounded_ids` | an `*_id` / `*_ids` argument appears in no tool result or user message | block |
 | `D5_one_call_at_a_time` | the write is proposed together with other calls | warning only |
@@ -83,6 +83,15 @@ D5 is recorded without blocking. In live retail runs the agent often batched
 independent writes, such as two cancellations; τ²-bench does not penalize this,
 while blocking it forced every call to be resent, once used up the step budget,
 and reported D5 in place of a blocking rule that also applied.
+
+The session user is the first user id an authentication tool
+(`find_user_id_by_email`, `find_user_id_by_name_zip`) returns. It does not
+change for the rest of the conversation, matching the retail policy that the
+agent helps only one user per conversation. If the agent later authenticates
+someone else, that user is recorded under `other_users` but gains nothing: D2
+still blocks writes to their orders or account. The rule cannot tell when the
+first user authenticated is the wrong person, for example when the customer
+opens with someone else's email.
 
 Facts come only from tool results and user messages, not from assistant text.
 Every audited call, with its verdict, blocking rule, warnings, and fact
@@ -144,7 +153,8 @@ All four faults also run with `--audit off` as the unaudited baseline.
 `info.cancellation_recovery.fault_type` names the fault; the two existing
 faults record the same fields as before.
 
-D1 and D2 have no injected fault and are covered by unit tests only. Changing
+D1 and D2 have no injected fault and are covered by unit tests only, including
+a write to a second user the agent authenticated in the same conversation. Changing
 the agent's own write call cannot reach them: by the time of a write the
 customer is already authenticated, and an order id of another user is caught
 first by D4, or by D3 when it is mentioned but not retrieved. Testing them live
