@@ -11,6 +11,7 @@ since the agent may help only one user per conversation.
 """
 
 import json
+import re
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -28,6 +29,11 @@ from tau2.environment.environment import Environment
 from tau2.environment.toolkit import ToolType
 
 MAX_FAILURES = 2
+
+# Identifiers are runs of these characters; "#", spaces and punctuation separate
+# them. This holds for every id in the τ²-bench retail, airline, telecom and
+# banking databases once a leading "#" is removed.
+ID_TOKEN = re.compile(r"[A-Za-z0-9_]+")
 
 
 @dataclass(frozen=True)
@@ -64,14 +70,19 @@ class Facts:
     """Write argument -> record id -> {"owner", "status"}."""
     failures: Counter = field(default_factory=Counter)
     """(tool name, canonical arguments) -> failed or blocked attempts."""
-    evidence: list[str] = field(default_factory=list)
-    """Successful tool results and user messages. Assistant text is excluded."""
+    tokens: set[str] = field(default_factory=set)
+    """Identifier tokens of successful tool results and user messages.
+    Assistant text is excluded."""
 
     def grounded(self, value: str) -> bool:
-        """Whether an identifier appears in a tool result or a user message."""
-        value = value.strip()
-        forms = {value, value.lstrip("#")} - {""}
-        return any(form in text for form in forms for text in self.evidence)
+        """Whether an identifier appears whole in a tool result or a user message.
+
+        A leading "#" is optional on either side, so a customer may omit it. Part
+        of a longer identifier does not count: W8835847 is not grounded by
+        W88358470.
+        """
+        core = value.strip().lstrip("#")
+        return bool(core) and core in self.tokens
 
     def snapshot(self) -> dict:
         return {
@@ -101,13 +112,13 @@ def build_facts(messages: Iterable[Message], config: DomainConfig) -> Facts:
         if isinstance(message, (AssistantMessage, UserMessage)):
             calls.update((call.id, call) for call in message.tool_calls or [])
             if isinstance(message, UserMessage) and message.content:
-                facts.evidence.append(message.content)
+                facts.tokens.update(ID_TOKEN.findall(message.content))
         elif isinstance(message, ToolMessage) and message.id in calls:
             call = calls[message.id]
             if message.error:
                 facts.failures[call_key(call)] += 1
             elif message.content:
-                facts.evidence.append(message.content)
+                facts.tokens.update(ID_TOKEN.findall(message.content))
                 _record_result(facts, config, call, _parse(message.content))
     return facts
 
@@ -187,9 +198,9 @@ def grounded_ids(call: ToolCall, facts: Facts, batch: list[ToolCall], config: Do
         missing = [str(item) for item in values if not facts.grounded(str(item))]
         if missing:
             return (
-                f"{name} {', '.join(missing)} did not appear in any tool result or user "
-                "message, so this call was not executed. Do not guess identifiers: look "
-                "them up with a tool or ask the user."
+                f"{name} {', '.join(missing)} did not appear as a complete identifier in "
+                "any tool result or user message, so this call was not executed. Do not "
+                "guess identifiers: look them up with a tool or ask the user."
             )
     return None
 

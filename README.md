@@ -75,7 +75,7 @@ tools do not enforce:
 | `D1_authenticated` | no user has been authenticated | block |
 | `D2_owned_by_user` | the target order or account does not belong to the session user | block |
 | `D3_record_observed` | the target order was never retrieved | block |
-| `D4_grounded_ids` | an `*_id` / `*_ids` argument appears in no tool result or user message | block |
+| `D4_grounded_ids` | an `*_id` / `*_ids` argument does not appear as a complete identifier in any tool result or user message (a leading `#` is optional) | block |
 | `D5_one_call_at_a_time` | the write is proposed together with other calls | warning only |
 | `D6_repeated_failure` | the identical call already failed or was blocked twice | block |
 
@@ -94,6 +94,16 @@ first user authenticated is the wrong person, for example when the customer
 opens with someone else's email.
 
 Facts come only from tool results and user messages, not from assistant text.
+For D4 these texts are split into identifier tokens, runs of letters, digits
+and underscores, and an argument is grounded only when it equals a token once
+a leading `#` is removed. Part of a longer id does not count: `W8835847` is not
+grounded by `W88358470`, nor `8600` by `8600330539`. Every id in the τ²-bench
+retail, airline, telecom and banking databases has this form; a domain whose
+ids contain other characters, such as `-`, would need a bounded regex search
+instead. D4 shows only that an id was not made up, not that it is the one the
+customer meant: a different order of the same customer that was mentioned and
+retrieved still passes D1–D6.
+
 Every audited call, with its verdict, blocking rule, warnings, and fact
 snapshot, is saved under `info.deterministic_checks`. The original
 `deterministic` mode is unchanged.

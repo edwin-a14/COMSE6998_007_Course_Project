@@ -100,7 +100,7 @@ class BuildFactsTest(unittest.TestCase):
         facts = build_facts(dialogue.messages, RETAIL)
         self.assertIsNone(facts.session_user)
         self.assertEqual(sum(facts.failures.values()), 1)
-        self.assertFalse(facts.grounded("User not found"))
+        self.assertFalse(facts.grounded("User"))
 
     def test_assistant_text_is_not_evidence(self):
         facts = build_facts(Dialogue().assistant(f"Your order is {ORDER}.").messages, RETAIL)
@@ -108,6 +108,24 @@ class BuildFactsTest(unittest.TestCase):
 
     def test_order_id_without_hash_from_user_is_grounded(self):
         facts = build_facts(Dialogue().user("It's order W8835847").messages, RETAIL)
+        self.assertTrue(facts.grounded(ORDER))
+
+    def test_partial_id_is_not_grounded(self):
+        facts = build_facts(Dialogue().user("Please cancel order W88358470").messages, RETAIL)
+        self.assertFalse(facts.grounded(ORDER))
+
+    def test_id_inside_longer_id_is_not_grounded(self):
+        facts = build_facts(
+            Dialogue().user("Product 8600330539, paid with gift_card_2652153").messages, RETAIL,
+        )
+        for value in ("8600", "card_2652153", "2652153"):
+            with self.subTest(value=value):
+                self.assertFalse(facts.grounded(value))
+        self.assertTrue(facts.grounded("8600330539"))
+        self.assertTrue(facts.grounded("gift_card_2652153"))
+
+    def test_id_next_to_punctuation_is_grounded(self):
+        facts = build_facts(Dialogue().user("Cancel W8835847, please.").messages, RETAIL)
         self.assertTrue(facts.grounded(ORDER))
 
     def test_reads_results_inside_multi_tool_message(self):
@@ -208,6 +226,30 @@ class RuleTest(unittest.TestCase):
         decision = audit(dialogue, call)
         self.assertBlocked(decision, "D4_grounded_ids")
         self.assertIn("item_ids 8895454203", decision["reason"])
+
+    def test_d4_blocks_id_that_is_part_of_a_longer_id(self):
+        # item_ids have no D3 lookup behind them, so D4 alone must reject a truncated id.
+        dialogue = (
+            Dialogue()
+            .user("Hi, my email is daiki@example.com")
+            .authenticate()
+            .tool("get_order_details", {"order_id": ORDER}, {
+                "order_id": ORDER, "user_id": USER, "status": "pending",
+                "items": [{"item_id": "8895454203", "product_id": "8600330539"}],
+                "payment_history": [{"payment_method_id": "gift_card_2652153"}],
+            })
+            .tool(
+                "get_product_details", {"product_id": "8600330539"},
+                {"product_id": "8600330539", "variants": {"7373893106": {}}},
+            )
+        )
+        call = ToolCall(id="proposal", name="modify_pending_order_items", arguments={
+            "order_id": ORDER, "item_ids": ["8895454"], "new_item_ids": ["7373893106"],
+            "payment_method_id": "gift_card_2652153",
+        })
+        decision = audit(dialogue, call)
+        self.assertBlocked(decision, "D4_grounded_ids")
+        self.assertIn("item_ids 8895454", decision["reason"])
 
     def test_d5_warns_without_blocking_a_batched_write(self):
         dialogue = clean_dialogue()
