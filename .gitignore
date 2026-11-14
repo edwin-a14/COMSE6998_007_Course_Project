@@ -5,3 +5,5 @@ scratch/
 /data/
 # AFTraj evaluation outputs (python -m aftraj.run_eval)
 /results/aftraj/
+
+__pycache__/
