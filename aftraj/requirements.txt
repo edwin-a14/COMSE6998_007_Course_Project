@@ -1,6 +1,7 @@
 # Only for loading the parquet files. audit_core, the adapter and the tests
 # without real data need nothing beyond the standard library.
-# Older pyarrow (19.0 tested) fails on these files with
-# "Repetition level histogram size mismatch"; 26.0.1 works.
+# The files were written by Arrow 23.0.1. pyarrow 19.0 fails to read their
+# nested list columns with "Repetition level histogram size mismatch";
+# 20.0.0, 21.0.0, 22.0.0, 23.0.1 and 26.0.1 were tested and work.
 pandas>=2.2
-pyarrow>=26.0
+pyarrow>=20.0

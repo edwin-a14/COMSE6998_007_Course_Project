@@ -169,8 +169,9 @@ orchestrator (`tau2_audit.py`); coordinate this with Edwin.
 
 ### Setup
 
-AFTraj needs only pandas and a recent pyarrow (older pyarrow, 19.0 tested,
-fails on these files). τ²-bench is not needed. From the project root:
+AFTraj needs only pandas and pyarrow 20 or newer: pyarrow 19 cannot read the
+nested columns of these files ("Repetition level histogram size mismatch").
+τ²-bench is not needed. From the project root:
 
 ```sh
 uv run --no-project --with-requirements aftraj/requirements.txt python -m aftraj.data download
@@ -329,7 +330,7 @@ Claude-Haiku-4.5, using the more permissive protocol above.
 # interface, general auditors and AFTraj adapter: standard library only
 python -B -m unittest tests.test_audit_core aftraj.tests.test_adapter
 
-# checks on the real data (needs data/aftraj and pyarrow>=26)
+# checks on the real data (needs data/aftraj and pyarrow>=20)
 uv run --no-project --with-requirements aftraj/requirements.txt python -B -m unittest aftraj.tests.test_data
 
 # everything, including τ² parity and contract tests (from the project root;

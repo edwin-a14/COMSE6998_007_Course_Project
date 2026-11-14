@@ -3,3 +3,5 @@
 scratch/
 # AFTraj-2K parquet files (python -m aftraj.data download)
 /data/
+# AFTraj evaluation outputs (python -m aftraj.run_eval)
+/results/aftraj/

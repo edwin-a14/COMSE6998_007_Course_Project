@@ -82,7 +82,7 @@ def load(
     limit: int | None = None,
 ) -> list[Trajectory]:
     """Load trajectories in a fixed order: safe first, then unsafe, file order."""
-    import pandas as pd  # needs pyarrow>=26; see aftraj/requirements.txt
+    import pandas as pd  # needs pyarrow>=20; see aftraj/requirements.txt
 
     if split not in SPLITS:
         raise ValueError(f"unknown split {split!r}; expected one of {SPLITS}")

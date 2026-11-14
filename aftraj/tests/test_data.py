@@ -1,5 +1,5 @@
 """Checks on the real AFTraj files. Skipped unless data/aftraj/ is downloaded and
-pandas with pyarrow>=26 is installed (see aftraj/requirements.txt)."""
+pandas with pyarrow>=20 is installed (see aftraj/requirements.txt)."""
 
 import unittest
 
@@ -15,10 +15,10 @@ def _available() -> bool:
         import pyarrow
     except ImportError:
         return False
-    return int(pyarrow.__version__.split(".")[0]) >= 26
+    return int(pyarrow.__version__.split(".")[0]) >= 20
 
 
-@unittest.skipUnless(_available(), "AFTraj data or pyarrow>=26 not available")
+@unittest.skipUnless(_available(), "AFTraj data or pyarrow>=20 not available")
 class RealDataTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
