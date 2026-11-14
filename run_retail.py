@@ -16,6 +16,7 @@ from tau2.runner import (
 )
 from tau2.user.user_simulator import UserSimulator
 
+from deterministic_audit import GeneralDeterministicAuditor
 from replay_cancellation_audit import cancellation_batch
 from semantic_audit import (
     audit_tool_call, cancellation_context, other_pending_order, should_audit_tool,
@@ -30,7 +31,10 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--audit",
-        choices=("off", "deterministic", "semantic", "continuous", *RULE_AUDIT_MODES),
+        choices=(
+            "off", "deterministic", "deterministic-general", "semantic", "continuous",
+            *RULE_AUDIT_MODES,
+        ),
         default="off",
     )
     parser.add_argument("--audit-llm", default="openai/gpt-4.1-mini")
@@ -42,6 +46,26 @@ def main(argv: list[str] | None = None) -> None:
     faults.add_argument(
         "--inject-wrong-order", action="store_true",
         help="Substitute another observed pending order and allow one retry",
+    )
+    faults.add_argument(
+        "--inject-unretrieved-order", action="store_true",
+        help="Substitute a pending order of the same user that was listed but never "
+        "retrieved, and allow one retry",
+    )
+    faults.add_argument(
+        "--inject-other-user-order", action="store_true",
+        help="Substitute a pending order of another user that the conversation never "
+        "mentions, and allow one retry",
+    )
+    faults.add_argument(
+        "--inject-batched-call", action="store_true",
+        help="Add an order lookup to the batch of the first valid cancellation, and "
+        "allow one retry",
+    )
+    faults.add_argument(
+        "--inject-tool-failure", action="store_true",
+        help="Fail every cancellation of the first validly cancelled order with a "
+        "simulated service error",
     )
     faults.add_argument(
         "--checkpoint", type=Path,
@@ -162,12 +186,20 @@ def main(argv: list[str] | None = None) -> None:
             )
         return feedback + " Review the request and earlier tool results before proposing the next action."
 
+    general_auditor = None
     if args.audit == "deterministic":
         orchestrator.before_tool_call = retail_cancellation_block_reason
+    elif args.audit == "deterministic-general":
+        general_auditor = GeneralDeterministicAuditor.for_orchestrator(orchestrator, config.domain)
+        orchestrator.before_tool_call = general_auditor
     elif args.audit in ("semantic", "continuous", *RULE_AUDIT_MODES):
         orchestrator.before_tool_call = audit_block_reason
     orchestrator.inject_cancellation_fault = args.inject_cancellation_fault
     orchestrator.inject_wrong_order = args.inject_wrong_order or checkpoint is not None
+    orchestrator.inject_unretrieved_order = args.inject_unretrieved_order
+    orchestrator.inject_other_user_order = args.inject_other_user_order
+    orchestrator.inject_batched_call = args.inject_batched_call
+    orchestrator.inject_tool_failure = args.inject_tool_failure
     orchestrator.checkpoint = checkpoint
     orchestrator.recovery_enabled = not args.no_recovery
 
@@ -183,6 +215,8 @@ def main(argv: list[str] | None = None) -> None:
         simulation.info["recovery_enabled"] = orchestrator.recovery_enabled
     if args.audit in ("semantic", "continuous", "hybrid"):
         simulation.info.update(audit_model=args.audit_llm, semantic_checks=semantic_checks)
+    if general_auditor is not None:
+        simulation.info["deterministic_checks"] = general_auditor.decisions
     if args.audit in RULE_AUDIT_MODES:
         simulation.info["rule_blocks"] = rule_blocks
     results = Results(info=info, tasks=[task], simulations=[simulation])
@@ -195,10 +229,21 @@ def main(argv: list[str] | None = None) -> None:
         f"termination={simulation.termination_reason.value}, "
         f"rejected proposals={rejections}"
     )
-    if args.inject_cancellation_fault or orchestrator.inject_wrong_order:
+    if orchestrator.fault_type is not None:
         print(f'Cancellation recovery: {simulation.info["cancellation_recovery"]["status"]}')
     if semantic_checks:
         print("Semantic verdicts: " + ", ".join(check["verdict"] for check in semantic_checks))
+    if general_auditor is not None:
+        decisions = general_auditor.decisions
+        rules = [decision["rule"] for decision in decisions if decision["rule"]]
+        warnings = [
+            warning["rule"] for decision in decisions for warning in decision["warnings"]
+        ]
+        print(
+            f"Deterministic checks: {len(decisions)} write calls audited, "
+            f"blocked by: {', '.join(rules) or 'none'}, "
+            f"warnings: {', '.join(warnings) or 'none'}"
+        )
     print(f"Saved {args.output}")
 
 
