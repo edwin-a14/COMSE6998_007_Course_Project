@@ -7,6 +7,36 @@ COMSE6998_007 Course Project
 - Binyan Sun (bs3654@columbia.edu)
 - Edwin Argudo (eaa2193@columbia.edu)
 
+## Shared audit interface and AFTraj-2K evaluation
+
+Auditors implement one benchmark-independent method in
+[`audit_core/`](audit_core/interface.py):
+
+```python
+audit(history: list[Turn], proposal: Turn, tools: list[ToolSpec], context: AuditContext | None) -> Verdict
+```
+
+`proposal` is the agent turn about to take effect: its text and every tool
+call it makes, possibly none. The returned `Verdict` holds a decision
+(`allow`/`warn`/`block`), a risk score in [0, 1], and a reason. Adapters build
+these inputs from each benchmark: [`tau2_adapter.py`](tau2_adapter.py) for
+τ²-bench and [`aftraj/adapter.py`](aftraj/adapter.py) for AFTraj, so one
+auditor runs on both. The D1–D6 rules below now live in
+`audit_core/auditors/rules.py`; their τ² behavior is unchanged.
+
+AFTraj-2K is evaluated offline with the paper's metrics, without τ²-bench.
+From the project root:
+
+```sh
+uv run --no-project --with-requirements aftraj/requirements.txt python -m aftraj.data download
+uv run --no-project --with-requirements aftraj/requirements.txt \
+  python -m aftraj.run_eval --auditor rules --split dev
+```
+
+See [aftraj/README.md](aftraj/README.md) for the interface specification, how
+to add an auditor, the evaluation protocol, splits, and label-leakage
+precautions.
+
 ## Run the retail pilot
 
 Use the sibling `tau2-bench` checkout at `v1.0.1` (commit `fc0055d`). Run
@@ -123,9 +153,9 @@ uv run --no-sync python -B ../COMSE6998_007_Course_Project/replay_deterministic_
 uv run --no-sync python -B ../COMSE6998_007_Course_Project/summarize_general_audit.py \
   data/simulations/fp-test
 
-# Unit tests
+# Unit tests (tests/ and aftraj/tests/)
 uv run --no-sync python -B -m unittest discover \
-  -s ../COMSE6998_007_Course_Project/tests -t ../COMSE6998_007_Course_Project
+  -s ../COMSE6998_007_Course_Project -t ../COMSE6998_007_Course_Project
 ```
 
 #### Faults aimed at the general rules

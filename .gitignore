@@ -1,3 +1,5 @@
 .DS_Store
 
 scratch/
+# AFTraj-2K parquet files (python -m aftraj.data download)
+/data/
