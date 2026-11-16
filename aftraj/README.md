@@ -216,7 +216,11 @@ given:
   compared with `agent_turns` (the cost side of selective auditing).
 
 `--resume` continues an interrupted run. Without it, an existing
-`per_sample.jsonl` is never overwritten.
+`per_sample.jsonl` is never overwritten. A resumed run must use the same
+`--auditor`, `--split`, `--domains`, `--limit` and `--full-scan` as the
+config line, or it stops. A partial last line from a crash mid-write is
+dropped and that trajectory is run again. `results.json` scores only the
+trajectories selected by this run, each once.
 
 ### Protocol
 

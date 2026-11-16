@@ -89,11 +89,47 @@ def summarize(rows: list[dict[str, Any]], trajectories: list[Trajectory]) -> dic
     }
 
 
-def _read_rows(path: Path) -> list[dict[str, Any]]:
+# Settings that change the rows a run produces; a resumed run must match them.
+RESUME_KEYS = ("auditor", "split", "domains", "limit", "full_scan")
+
+
+def _load_previous(path: Path) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """Return the config and rows of an earlier run in `path`.
+
+    A row counts only once its newline is written. A trailing partial line, left
+    by a crash mid-write, is cut from the file so new rows start on a clean
+    line, and that trajectory is run again. A broken line before the end is
+    real corruption and raises ValueError.
+    """
     if not path.exists():
-        return []
-    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    return [row for row in rows if row.get("_record_type") != "config"]
+        return None, []
+    data = path.read_bytes()
+    complete = data[: data.rfind(b"\n") + 1]
+    if len(complete) < len(data):
+        print(f"dropping a partial last line ({len(data) - len(complete)} bytes) from {path}")
+        with path.open("r+b") as handle:
+            handle.truncate(len(complete))
+    config, rows = None, []
+    for number, line in enumerate(complete.decode("utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{path} line {number} is not valid JSON: {error}") from None
+        if record.get("_record_type") == "config":
+            config = config or record
+        else:
+            rows.append(record)
+    return config, rows
+
+
+def _config_mismatch(previous: dict[str, Any], config: dict[str, Any]) -> list[str]:
+    return [
+        f"{key}: {previous.get(key)!r} in file, {config[key]!r} now"
+        for key in RESUME_KEYS
+        if previous.get(key) != config[key]
+    ]
 
 
 def main(argv: list[str] | None = None) -> dict[str, Any]:
@@ -120,11 +156,29 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         "auditor": args.auditor, "split": args.split, "domains": domains, "limit": args.limit,
         "full_scan": args.full_scan, "trajectories": len(trajectories),
     }
-    rows = _read_rows(per_sample)
-    done = {row["conv_id"] for row in rows}
+    try:
+        previous, rows = _load_previous(per_sample)
+    except ValueError as error:
+        parser.error(str(error))
+    if previous is None and rows:
+        parser.error(f"{per_sample} has rows but no config line; cannot check it matches this run")
+    if previous is not None:
+        mismatch = _config_mismatch(previous, config)
+        if mismatch:
+            parser.error(
+                f"{per_sample} was written with other settings; use the same settings or another --output\n  "
+                + "\n  ".join(mismatch)
+            )
+    # Score only the current selection, once per trajectory.
+    selected = {t.conv_id for t in trajectories}
+    kept = {row["conv_id"]: row for row in rows if row["conv_id"] in selected}
+    if len(kept) < len(rows):
+        print(f"ignoring {len(rows) - len(kept)} rows in {per_sample} that are outside this selection or repeated")
+    rows = list(kept.values())
+    done = set(kept)
     auditor = AUDITORS[args.auditor]()
     with per_sample.open("a", encoding="utf-8") as handle:
-        if not done:
+        if previous is None:
             handle.write(json.dumps({"_record_type": "config", **config}) + "\n")
         for index, trajectory in enumerate(trajectories, 1):
             if trajectory.conv_id in done:
