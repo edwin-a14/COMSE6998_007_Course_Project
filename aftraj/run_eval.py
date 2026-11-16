@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from aftraj.adapter import audit_context, audit_points, is_auditable, tool_specs
-from aftraj.data import DEFAULT_DATA_DIR, SPLITS, Trajectory, load
+from aftraj.data import DEFAULT_DATA_DIR, DOMAINS, SPLITS, Trajectory, load
 from aftraj.metrics import aggregate_by_domain, format_report, per_sample_metrics
 from audit_core import AllowAllAuditor, Auditor
 from audit_core.auditors import GENERIC_CONFIG, RulesAuditor
@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--auditor", choices=sorted(AUDITORS), required=True)
     parser.add_argument("--split", choices=SPLITS, default="dev")
-    parser.add_argument("--domains", help="comma-separated: math,coding,agentic")
+    parser.add_argument("--domains", help=f"comma-separated: {','.join(DOMAINS)}")
     parser.add_argument("--limit", type=int, help="first N trajectories (smoke test)")
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--output", type=Path, help="default: results/aftraj/<auditor>-<split>")
@@ -144,8 +144,14 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     parser.add_argument("--resume", action="store_true", help="skip trajectories already in per_sample.jsonl")
     args = parser.parse_args(argv)
 
-    domains = [d.strip() for d in args.domains.split(",")] if args.domains else None
+    domains = [d.strip() for d in args.domains.split(",") if d.strip()] if args.domains else None
+    unknown = sorted(set(domains or ()) - set(DOMAINS))
+    if unknown:
+        parser.error(f"unknown --domains {', '.join(unknown)}; choose from {', '.join(DOMAINS)}")
     trajectories = load(args.data_dir, args.split, domains=domains, limit=args.limit)
+    # Check before anything is written, so a bad selection leaves no output behind.
+    if not trajectories:
+        parser.error(f"no trajectories selected (split={args.split}, domains={domains}, limit={args.limit})")
     output = args.output or RESULTS_ROOT / f"{args.auditor}-{args.split}"
     output.mkdir(parents=True, exist_ok=True)
     per_sample = output / "per_sample.jsonl"

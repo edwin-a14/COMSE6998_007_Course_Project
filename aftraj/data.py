@@ -28,6 +28,7 @@ HF_REPO = "ZBox008003/AFTraj"
 FILES = ("aftraj_safe.parquet", "aftraj_unsafe.parquet", "splits_test.json")
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "aftraj"
 SPLITS = ("test", "dev", "all")
+DOMAINS = ("math", "coding", "agentic")
 
 # Suffixes that mark the variant of one source trajectory, e.g.
 # math_0000_safe / math_0000_injected, gaia_0051_unsafe_diagnosed.
@@ -86,6 +87,9 @@ def load(
 
     if split not in SPLITS:
         raise ValueError(f"unknown split {split!r}; expected one of {SPLITS}")
+    unknown = sorted(set(domains or ()) - set(DOMAINS))
+    if unknown:
+        raise ValueError(f"unknown domains {unknown}; expected some of {DOMAINS}")
     data_dir = Path(data_dir)
     missing = [name for name in FILES if not (data_dir / name).exists()]
     if missing:

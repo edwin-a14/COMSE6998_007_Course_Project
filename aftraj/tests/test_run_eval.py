@@ -21,6 +21,33 @@ def trajectory(conv_id: str, label: str):
 TRAJECTORIES = [trajectory("math_a_safe", "safe"), trajectory("math_b_injected", "unsafe")]
 
 
+class SelectionTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.output = Path(self.tmp.name) / "run"
+
+    def run_main(self, *extra: str, trajectories=TRAJECTORIES):
+        argv = ["--auditor", "allow-all", "--output", str(self.output), *extra]
+        stderr = io.StringIO()
+        with mock.patch.object(run_eval, "load", return_value=list(trajectories)) as load, \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr), \
+                self.assertRaises(SystemExit):
+            run_eval.main(argv)
+        return load, stderr.getvalue()
+
+    def test_unknown_domain_is_refused_before_loading(self):
+        load, stderr = self.run_main("--domains", "math,maths")
+        load.assert_not_called()
+        self.assertIn("unknown --domains maths", stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_empty_selection_writes_nothing(self):
+        _, stderr = self.run_main("--domains", "coding", trajectories=[])
+        self.assertIn("no trajectories selected", stderr)
+        self.assertFalse(self.output.exists())
+
+
 class ResumeTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
