@@ -1,5 +1,34 @@
 # Selective Auditing and Local Recovery for LLM Agent Tool-Calling Loops
 
+## Shared semantic auditor (development component)
+
+`audit_core.auditors.SemanticAuditor(model, backend=...)` implements the shared
+`audit(history, proposal, tools, context)` interface. It serializes the complete
+prefix and proposal, tool specs and optional task policy, then validates a
+structured `allow` / `warn` / `block` response. No history is silently truncated.
+The prompt version, model settings, input/output tokens and model-call latency
+are recorded in `Verdict.details`; missing token usage remains `None`.
+
+The optional `LiteLLMBackend` uses the existing tau2 environment's LiteLLM
+installation and loads it only when called. It requires a provider supporting
+strict JSON-schema responses, makes no automatic retries, and can be replaced
+with a fake backend for tests. `model_calls` counts backend requests, including
+failed attempts, not guaranteed billable provider executions.
+
+Timeouts, refusals, truncated responses and invalid JSON/schema outputs raise
+`SemanticAuditError` with a separate failure kind and available cost details;
+they are not agent-error verdicts. The runner must explicitly record these
+errors when integrated. Selection remains in `SelectiveSemanticAuditor`, which
+can wrap this component after `RulesAuditor` in `CompositeAuditor`.
+
+This component is not yet registered in the AFTraj CLI or the live tau2 runner.
+Prompt quality and provider compatibility have not been evaluated with live
+models. Run its fake-backend tests from this directory without API calls:
+
+```sh
+../tau2-bench/.venv/bin/python -B -m unittest -v tests.test_semantic_auditor
+```
+
 COMSE6998_007 Course Project
 
 ## Team
