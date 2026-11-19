@@ -23,7 +23,7 @@ can wrap this component after `RulesAuditor` in `CompositeAuditor`.
 
 The AFTraj CLI now exposes `general-hybrid`, `selective-semantic`, and
 `continuous-semantic` via `audit_core.modes.build_model_auditor`. The live tau2
-runner is not yet connected to these modes. Three earlier synthetic live API
+runner now connects these modes at assistant tool-batch dispatch (see below). Three earlier synthetic live API
 checks passed; this is not a benchmark-wide quality result. For model evaluation
 commands and cost/error reporting, see [the AFTraj guide](aftraj/README.md).
 Run the component's fake-backend tests without API calls:
@@ -478,3 +478,52 @@ uv run --no-sync python -B ../COMSE6998_007_Course_Project/run_retail.py \
 
 See [RETAIL_RESULTS.md](RETAIL_RESULTS.md) for the saved comparisons and the
 command to regenerate the tables offline.
+
+
+## Shared model auditing in the retail runtime
+
+`run_retail.py --audit general-hybrid` now uses retail D1–D6 rules, the selector,
+and the shared SemanticAuditor. `selective-semantic` and `continuous-semantic`
+are available as controls at the same **tool-batch** boundary. The latter audits
+every assistant tool batch, not every assistant turn in this runtime yet.
+
+`ModelAuditOrchestrator` audits the complete current proposal against preceding
+history, tool schemas and retail policy before executing any tool in the batch.
+Allow/warn executes the batch. Block executes none and returns matching tool-error
+messages with feedback to the agent. Default `--audit-max-retries 2` permits two
+additional attempts after the first rejected batch; the third consecutive block
+stops the run. An allowed batch resets this counter; the benchmark's max-steps
+limit still applies. This is bounded pre-execution replanning, not state rollback
+or a general goal-stage checkpoint mechanism. Errors during allowed tool execution
+are handled by the existing benchmark and are not rolled back atomically.
+
+A `SemanticAuditError` stops the run without executing its batch or retrying the
+API. Diagnostics are saved under `simulation.info.model_audit`; `evaluation_valid`
+is false and the CLI exits nonzero. Exclude such runs from agent-quality metrics
+and separately report their count. The benchmark termination enum is
+`TOO_MANY_ERRORS`; `model_audit.stop_reason` distinguishes auditor failure from
+retry exhaustion. All per-batch verdict details (including usage and stage
+assessment) are retained. Rejected calls are removed from evaluator replay so
+operations that never ran do not change the scored database.
+
+Current boundaries: text-only replies are not intercepted; cancellation fault
+injection and recorded checkpoint options are rejected for these new modes.
+Legacy modes keep their existing behavior. Do not interpret this integration as
+proof of semantic accuracy: the v3 smoke allowed all three safe development
+trajectories, but only five of six synthetic cases passed; an explicit wrong
+intermediate result was warned rather than blocked.
+
+Offline dispatch tests, including the native tau2 step route returning rejection
+feedback to a fake agent and executing its corrected proposal:
+
+```sh
+../tau2-bench/.venv/bin/python -B -m unittest -v tests.test_tau2_model_audit
+```
+
+Example live run (paid agent, user and auditor requests; not part of unit tests):
+
+```sh
+../tau2-bench/.venv/bin/python -B run_retail.py \
+  --audit general-hybrid --audit-max-retries 2 --task-id 88 --max-steps 15 \
+  --output results/general-hybrid-retail-smoke.json
+```
