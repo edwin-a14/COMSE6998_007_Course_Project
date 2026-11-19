@@ -13,7 +13,9 @@ from audit_core.model import LiteLLMBackend, ModelResponse
 
 
 def output(decision="allow", **changes):
-    data = {"decision": decision, "score": 0.8 if decision == "block" else 0.1,
+    data = {"stage": "uncertain", "stage_evidence": "No explicit completion signal",
+            "error_evidence": ["Proposal contradicts observed result"] if decision == "block" else [],
+            "decision": decision, "score": 0.8 if decision == "block" else 0.1,
             "reason": "Conflicts with the evidence" if decision == "block" else "Supported",
             "rule_ids": ["evidence_conflict"] if decision == "block" else []}
     data.update(changes)
@@ -93,6 +95,32 @@ class SemanticAuditorTest(unittest.TestCase):
                 self.assertEqual(verdict.details["model"], "fake")
                 self.assertEqual(verdict.details["prompt_version"], auditor.prompt_version)
                 self.assertEqual(backend.requests[0].temperature, 0)
+
+    def test_stage_diagnostics_are_preserved_without_overriding_decision(self):
+        for stage in ("intermediate", "handoff", "final", "uncertain"):
+            for decision in ("allow", "warn", "block"):
+                with self.subTest(stage=stage, decision=decision):
+                    backend = FakeBackend(ModelResponse(output(decision, stage=stage), 100, 20))
+                    verdict = SemanticAuditor("fake", backend=backend).audit([], text_proposal(), [])
+                    self.assertEqual(verdict.decision, decision)
+                    self.assertEqual(verdict.details["semantic_assessment"]["stage"], stage)
+                    self.assertEqual(verdict.details["semantic_assessment"]["error_evidence"],
+                                     ["Proposal contradicts observed result"] if decision == "block" else [])
+
+    def test_invalid_stage_or_unsupported_block_is_an_auditor_error(self):
+        invalid = [output(stage="tool"), output(stage=None), output(stage_evidence=" "),
+                   output(stage_evidence=[]), output(error_evidence="error"),
+                   output(error_evidence=[""]), output("block", error_evidence=[])]
+        legacy = json.loads(output())
+        del legacy["stage"]
+        invalid.append(json.dumps(legacy))
+        for raw in invalid:
+            with self.subTest(raw=raw):
+                with self.assertRaises(SemanticAuditError) as caught:
+                    SemanticAuditor("fake", backend=FakeBackend(ModelResponse(raw, 100, 20))).audit(
+                        [], text_proposal(), [])
+                self.assertEqual(caught.exception.kind, "invalid_output")
+                self.assertEqual(caught.exception.details["input_tokens"], 100)
 
     def test_missing_usage_is_unknown_not_zero(self):
         backend = FakeBackend(ModelResponse(output()))

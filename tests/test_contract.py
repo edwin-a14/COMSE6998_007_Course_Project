@@ -103,7 +103,7 @@ class EveryAuditorRunsOnBothBenchmarksTest(unittest.TestCase):
         class FakeBackend:
             def complete(self, request):
                 return ModelResponse(
-                    '{"decision":"allow","score":0,"reason":"Fixture response","rule_ids":[]}',
+                    '{"stage":"uncertain","stage_evidence":"Fixture stage","error_evidence":[],"decision":"allow","score":0,"reason":"Fixture response","rule_ids":[]}',
                     input_tokens=10, output_tokens=5,
                 )
 

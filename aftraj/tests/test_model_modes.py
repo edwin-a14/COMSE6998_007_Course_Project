@@ -18,7 +18,7 @@ class Backend:
     def __init__(self, response=None, error=None):
         self.calls = 0
         self.response = response or ModelResponse(
-            '{"decision":"block","score":0.9,"reason":"Fixture error","rule_ids":["evidence_conflict"]}', 10, 5)
+            '{"stage":"uncertain","stage_evidence":"Fixture stage","error_evidence":["Fixture conflict"],"decision":"block","score":0.9,"reason":"Fixture error","rule_ids":["evidence_conflict"]}', 10, 5)
         self.error = error
 
     def complete(self, request):
@@ -63,7 +63,7 @@ class ModelModesTest(unittest.TestCase):
         self.assertEqual(row["usage"]["input_tokens"], 20)
 
     def test_missing_usage_is_not_counted_as_zero(self):
-        response = ModelResponse('{"decision":"allow","score":0,"reason":"Fixture","rule_ids":[]}')
+        response = ModelResponse('{"stage":"uncertain","stage_evidence":"Fixture stage","error_evidence":[],"decision":"allow","score":0,"reason":"Fixture","rule_ids":[]}')
         row = run_eval.evaluate(build_model_auditor("general-hybrid", model="fake", backend=Backend(response)), math_trajectory())
         self.assertIsNone(row["usage"]["input_tokens"])
 

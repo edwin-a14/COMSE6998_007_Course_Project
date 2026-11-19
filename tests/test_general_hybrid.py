@@ -14,7 +14,7 @@ class Backend:
 
     def complete(self, request):
         self.calls += 1
-        return ModelResponse('{"decision":"allow","score":0,"reason":"Fixture","rule_ids":[]}', 10, 5)
+        return ModelResponse('{"stage":"uncertain","stage_evidence":"Fixture stage","error_evidence":[],"decision":"allow","score":0,"reason":"Fixture","rule_ids":[]}', 10, 5)
 
 
 class GeneralHybridTest(unittest.TestCase):

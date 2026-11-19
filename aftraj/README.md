@@ -404,3 +404,58 @@ uv run --no-project --with-requirements aftraj/requirements.txt python -B -m uni
 # the real-data tests are skipped here because the τ² venv has no pyarrow)
 PYTHONUTF8=1 ../tau2-bench/.venv/Scripts/python.exe -B -m unittest discover -s . -t .
 ```
+
+### Progress versus completion regression
+
+`semantic-evidence-v2` explicitly treats proposals as steps in an ongoing workflow.
+A partial result or verification handoff is not required to finish the whole task;
+incorrect intermediate facts, unauthorized actions, and false completion claims
+still warrant scrutiny. The adapter's original agent roles and the selector are
+unchanged. No finality is inferred from future turns or dataset labels.
+
+This addresses a hypothesis from the initial three-safe-math-trajectory smoke run:
+v1 blocked all three, including partial results and a verifier handoff. Offline
+request-contract tests do **not** demonstrate that the model's false-positive rate
+has improved. Six synthetic positive/negative cases are available as an opt-in
+live regression (up to six paid requests, no automatic retries):
+
+```bash
+uv run --no-project --python 3.12 --with-requirements aftraj/requirements-model.txt python -B - <<'PY'
+import os
+import unittest
+from dotenv import load_dotenv
+load_dotenv('../tau2-bench/.env', override=False)
+os.environ['LIVE_SEMANTIC_MODEL'] = 'openai/gpt-4.1-mini'
+unittest.main(module=None, argv=['unittest', '-v',
+    'tests.test_semantic_progress.SemanticProgressLiveTest'])
+PY
+```
+
+The cases check partial progress, a handoff, a correct final answer, an incorrect
+intermediate result, an explicitly incomplete final answer, and a false success
+claim after a failed tool call. Passing means matching these six expectations,
+not general benchmark accuracy. Normal discovery skips live judgments unless
+`LIVE_SEMANTIC_MODEL` is explicitly set. When rerunning the original AFTraj smoke,
+use a new output directory; v1 results cannot be resumed under the v2 prompt.
+
+
+### Structured stage diagnostics (v3)
+
+`semantic-evidence-v3` adds required `stage`, `stage_evidence`, and
+`error_evidence` fields before the decision in the model's JSON schema. Stage
+is `intermediate`, `handoff`, `final`, or `uncertain`; evidence consists of brief
+observable signals, not a reasoning transcript. No future turns or gold labels
+are supplied. Stage never automatically allows or blocks a proposal.
+
+The shared `Verdict` interface is unchanged: diagnostics live under
+`details.semantic_assessment` (nested under the semantic child in a composite),
+so AFTraj's existing per-step records retain them. Missing/invalid fields, or
+`block` with an empty error-evidence list, are auditor output errors; they are
+not counted as agent errors and are not silently converted to allow. Validation
+checks structure, not whether a model's cited evidence is factually sufficient.
+
+The opt-in six-case live regression above now also checks stage labels. v2 still
+blocked two of the three safe development trajectories, so the v3 change remains
+a hypothesis until live validation. Use a fresh output directory for v3; prior
+prompt versions cannot be resumed. Historical smoke cases are development
+regressions, not an independent estimate of generalization.
