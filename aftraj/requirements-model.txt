@@ -1,0 +1,4 @@
+# Optional dependencies for real model-based AFTraj evaluation.
+-r requirements.txt
+litellm>=1.80.15,<1.82.7
+python-dotenv>=1.0.0

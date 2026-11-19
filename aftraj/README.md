@@ -1,5 +1,68 @@
 # Shared audit interface and AFTraj-2K evaluation
 
+## General-hybrid mode
+
+Three model-based modes now share a model backend, semantic prompt and output
+parser. Existing `allow-all`, `rules`, and `rules-unknown` modes remain available.
+
+| Mode | Behavior |
+| --- | --- |
+| `general-hybrid` | Generic D1–D6 rules, then selective semantic auditing unless rules block |
+| `selective-semantic` | The same selection policy and semantic auditor, without rules |
+| `continuous-semantic` | The same semantic auditor on every agent turn |
+
+The v1 selector audits text, reasoning, raw actions, writes and unknown tools.
+Empty turns and known read-only calls without other content skip the model.
+One entire proposal is judged at a time. Generic rules do not require retail
+authentication: a retail caller must explicitly pass `DOMAIN_CONFIGS["retail"]`
+to `audit_core.modes.build_model_auditor`. These new CLI modes are available
+only in the offline AFTraj runner; live tau2 hooks/recovery are unchanged.
+
+Model evaluation makes paid API calls. From the project root, a small **dev**
+run can be started with the following command. `--limit` limits trajectories,
+not model calls: one trajectory may require several requests. Dependencies
+are isolated by uv; no changes to tau2's locked environment are required.
+
+```sh
+uv run --no-project --python 3.12 --with-requirements aftraj/requirements-model.txt \
+  python -B -m aftraj.run_eval \
+  --auditor general-hybrid --model openai/gpt-4.1-mini \
+  --env-file ../tau2-bench/.env --split dev --limit 3 \
+  --output results/aftraj/general-hybrid-dev-smoke
+```
+
+The optional env file is loaded without overriding existing environment values;
+keys are never written to reports. Use distinct output directories for the two
+controls. Keep their model, `--max-tokens` (default 512), `--timeout` (30 seconds),
+data selection and full-scan setting identical. Do not tune on the test split.
+
+`per_sample.jsonl` now preserves every verdict's nested `details`. Each row and
+`results.json` also contain `usage`: model requests, input/output tokens, summed
+model latency and selector skips. `audit_calls` still counts interface calls,
+including cheap rules and skipped proposals; it is not the number of API calls.
+A rule block short-circuits before the selector and is not a selector skip.
+Unavailable token usage remains null, including in totals; it is not zero cost.
+
+`SemanticAuditError` ends that trajectory with `status="error"` and
+`pred_step=null`. Partial verdicts and available costs are saved, but failed
+trajectories are excluded from detection metrics. Always report
+`evaluated_trajectories` AND `failed_trajectories`; scores cover completed rows
+only. The CLI exits nonzero if any trajectory failed. No automatic retry is
+made. `--resume` skips saved error rows too; use a new output directory for an
+explicit rerun. In full-scan mode, an error after an earlier block also marks
+the row incomplete rather than silently treating the remaining scan as valid.
+
+Resume checks include result-format version, model settings, prompt version
+and selection-policy version. Old output files without these fields must use
+a new output directory. Prompt/policy changes must bump their version strings.
+
+Offline tests (fake backend, no model API calls):
+
+```sh
+../tau2-bench/.venv/bin/python -B -m unittest -v \
+  tests.test_general_hybrid aftraj.tests.test_model_modes
+```
+
 This folder evaluates our auditors offline on
 [AFTraj-2K](https://huggingface.co/datasets/ZBox008003/AFTraj) (AgentForesight,
 arXiv 2605.08715). It relies on a benchmark-independent audit interface in

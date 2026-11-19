@@ -21,9 +21,12 @@ they are not agent-error verdicts. The runner must explicitly record these
 errors when integrated. Selection remains in `SelectiveSemanticAuditor`, which
 can wrap this component after `RulesAuditor` in `CompositeAuditor`.
 
-This component is not yet registered in the AFTraj CLI or the live tau2 runner.
-Prompt quality and provider compatibility have not been evaluated with live
-models. Run its fake-backend tests from this directory without API calls:
+The AFTraj CLI now exposes `general-hybrid`, `selective-semantic`, and
+`continuous-semantic` via `audit_core.modes.build_model_auditor`. The live tau2
+runner is not yet connected to these modes. Three earlier synthetic live API
+checks passed; this is not a benchmark-wide quality result. For model evaluation
+commands and cost/error reporting, see [the AFTraj guide](aftraj/README.md).
+Run the component's fake-backend tests without API calls:
 
 ```sh
 ../tau2-bench/.venv/bin/python -B -m unittest -v tests.test_semantic_auditor
