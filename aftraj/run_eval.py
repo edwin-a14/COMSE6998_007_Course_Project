@@ -28,6 +28,7 @@ from aftraj.metrics import aggregate_by_domain, format_report, per_sample_metric
 from audit_core import AllowAllAuditor, Auditor
 from audit_core.auditors import GENERIC_CONFIG, RulesAuditor, SemanticAuditError, SemanticAuditor, SelectiveSemanticAuditor
 from audit_core.modes import MODEL_MODES, build_model_auditor
+from audit_core.usage import usage_from_details as _usage, sum_usage as _sum_usage
 
 RESULTS_ROOT = Path(__file__).resolve().parent.parent / "results" / "aftraj"
 
@@ -37,29 +38,6 @@ AUDITORS: dict[str, Callable[[], Auditor]] = {
     "rules": lambda: RulesAuditor(GENERIC_CONFIG),
     "rules-unknown": lambda: RulesAuditor(GENERIC_CONFIG, audit_unknown=True),
 }
-
-
-def _usage(details: dict) -> dict:
-    """Read nested composite results without counting a delegate twice."""
-    if "auditors" in details:
-        return _sum_usage([_usage(item["details"]) for item in details["auditors"]])
-    calls = details.get("model_calls", 0)
-    selection = details.get("semantic_selection", {})
-    return {
-        "model_calls": calls,
-        "input_tokens": details.get("input_tokens") if calls else 0,
-        "output_tokens": details.get("output_tokens") if calls else 0,
-        "model_latency_ms": details.get("latency_ms") if calls else 0,
-        "semantic_skips": int(selection.get("selected") is False),
-    }
-
-
-def _sum_usage(items: list[dict]) -> dict:
-    totals = {}
-    for key in ("model_calls", "input_tokens", "output_tokens", "model_latency_ms", "semantic_skips"):
-        values = [item[key] for item in items]
-        totals[key] = None if any(value is None for value in values) else sum(values)
-    return totals
 
 
 def evaluate(auditor: Auditor, trajectory: Trajectory, full_scan: bool = False) -> dict[str, Any]:

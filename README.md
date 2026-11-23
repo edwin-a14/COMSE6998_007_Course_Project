@@ -1,3 +1,7 @@
+> **General-hybrid handoff:** see [the team specification and runbook](docs/general-hybrid.md)
+> for current scope, interfaces, output schema, free tests and opt-in live runs.
+> Historical smoke notes below describe the versions tested at the time.
+
 # Selective Auditing and Local Recovery for LLM Agent Tool-Calling Loops
 
 ## Shared semantic auditor (development component)
@@ -23,7 +27,7 @@ can wrap this component after `RulesAuditor` in `CompositeAuditor`.
 
 The AFTraj CLI now exposes `general-hybrid`, `selective-semantic`, and
 `continuous-semantic` via `audit_core.modes.build_model_auditor`. The live tau2
-runner now connects these modes at assistant tool-batch dispatch (see below). Three earlier synthetic live API
+runner now connects these modes to generated text and tool-batch dispatch (see below). Three earlier synthetic live API
 checks passed; this is not a benchmark-wide quality result. For model evaluation
 commands and cost/error reporting, see [the AFTraj guide](aftraj/README.md).
 Run the component's fake-backend tests without API calls:
@@ -484,8 +488,10 @@ command to regenerate the tables offline.
 
 `run_retail.py --audit general-hybrid` now uses retail D1–D6 rules, the selector,
 and the shared SemanticAuditor. `selective-semantic` and `continuous-semantic`
-are available as controls at the same **tool-batch** boundary. The latter audits
-every assistant tool batch, not every assistant turn in this runtime yet.
+are available as controls at the same boundaries: complete tool batches before
+execution and generated text before delivery. Continuous mode audits both; the
+selective modes may skip known read-only batches. The fixed bootstrap greeting
+is not a generated agent proposal and is not audited.
 
 `ModelAuditOrchestrator` audits the complete current proposal against preceding
 history, tool schemas and retail policy before executing any tool in the batch.
@@ -506,8 +512,8 @@ retry exhaustion. All per-batch verdict details (including usage and stage
 assessment) are retained. Rejected calls are removed from evaluator replay so
 operations that never ran do not change the scored database.
 
-Current boundaries: text-only replies are not intercepted; cancellation fault
-injection and recorded checkpoint options are rejected for these new modes.
+Current boundaries: cancellation fault injection and recorded checkpoint options
+are rejected for these new modes.
 Legacy modes keep their existing behavior. Do not interpret this integration as
 proof of semantic accuracy: the v3 smoke allowed all three safe development
 trajectories, but only five of six synthetic cases passed; an explicit wrong
@@ -527,3 +533,41 @@ Example live run (paid agent, user and auditor requests; not part of unit tests)
   --audit general-hybrid --audit-max-retries 2 --task-id 88 --max-steps 15 \
   --output results/general-hybrid-retail-smoke.json
 ```
+
+
+### Text delivery and bounded revision
+
+Generated text is reviewed immediately after the native agent generation step,
+before the next step can send it to the user. Allow/warn proceeds normally. A
+blocked draft is removed from the delivered/evaluation trajectory and retained
+under `model_audit.rejected_texts`. The agent retains its draft in its private
+state and receives explicitly labeled internal runtime feedback as a system
+message; this is not a fabricated tool result or customer authorization. Feedback
+is not appended to the public trajectory or the next auditor's evidence history.
+The auditor sees the delivered history plus the new proposal, not rejected drafts.
+
+Retries use native generation steps, so they consume the normal step budget.
+The consecutive-block counter is shared across text and tools; allowed proposals
+reset it. Text that signals agent completion is also reviewed before accepting
+that stop. Auditor errors and retry exhaustion stop with no rejected draft sent
+to the user. Agent cost includes rejected drafts; their original usage and cost
+remain in diagnostics. Unknown generation costs remain unknown. The recorded
+scope is now `assistant-tools-and-text`; older `assistant-tool-batches` runs are
+not directly comparable without accounting for this coverage change.
+
+Progress: selection, semantic transport, hybrid composition and AFTraj plumbing
+are implemented. Retail tool and text hooks have offline integration tests;
+the tool-only scope has a live retail smoke and text revision has the controlled
+live check described below. Full recovery/fault
+experiments, broader evaluation, and result documentation remain outstanding.
+
+
+Controlled live text-recovery check (2026-11-19, `openai/gpt-4.1-mini`): an
+injected false cancellation-success draft following a failed tool result was
+blocked. The real LLMAgent received runtime feedback, produced a truthful
+failure message, and the second real audit allowed it. A fake recipient received
+only the revision. Two auditor calls used 2,211 input and 200 output tokens;
+one additional agent call generated the revision. The initial bad draft and tool
+failure were synthetic, no order operation executed, and this is a routing smoke
+check rather than an estimate of detection or recovery accuracy. Diagnostic
+output is local at `results/general-hybrid-text-recovery-smoke-20261119.json`.

@@ -1,6 +1,7 @@
 """Run and score one τ²-bench retail simulation."""
 
 import argparse
+import math
 from pathlib import Path
 from random import Random
 
@@ -17,6 +18,7 @@ from tau2.runner import (
 from tau2.user.user_simulator import UserSimulator
 
 from deterministic_audit import DOMAIN_CONFIGS, GeneralDeterministicAuditor
+from audit_core.auditors import SemanticAuditor, SelectiveSemanticAuditor
 from audit_core.modes import MODEL_MODES, build_model_auditor
 from tau2_model_audit import ModelAuditOrchestrator
 from tau2_adapter import tool_specs, audit_context
@@ -42,7 +44,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--audit-llm", default="openai/gpt-4.1-mini")
     parser.add_argument('--audit-max-retries', type=int, default=2,
-                        help='Additional attempts after a blocked model-audited batch')
+                        help='Additional attempts after a blocked model-audited proposal')
+    parser.add_argument('--audit-max-tokens', type=int, default=512)
+    parser.add_argument('--audit-timeout', type=float, default=30)
     faults = parser.add_mutually_exclusive_group()
     faults.add_argument(
         "--inject-cancellation-fault", action="store_true",
@@ -96,6 +100,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--no-recovery requires --checkpoint")
     if args.inject_cancellation_fault and args.audit not in ("deterministic", *RULE_AUDIT_MODES):
         parser.error("--inject-cancellation-fault requires --audit deterministic, rules-only, or hybrid")
+    if args.audit_max_tokens < 1 or not math.isfinite(args.audit_timeout) or args.audit_timeout <= 0:
+        parser.error('--audit-max-tokens and --audit-timeout must be positive and finite')
     if args.audit_max_retries < 0:
         parser.error('--audit-max-retries must be nonnegative')
     if args.audit in MODEL_MODES and (
@@ -203,9 +209,18 @@ def main(argv: list[str] | None = None) -> None:
     if args.audit in MODEL_MODES:
         orchestrator.configure_audit(
             build_model_auditor(args.audit, model=args.audit_llm,
-                               rules_config=DOMAIN_CONFIGS[config.domain]),
+                               rules_config=DOMAIN_CONFIGS[config.domain],
+                               max_tokens=args.audit_max_tokens, timeout=args.audit_timeout),
             tool_specs(environment), audit_context(environment, config.domain),
             max_retries=args.audit_max_retries,
+            configuration={
+                'mode': args.audit, 'model': args.audit_llm,
+                'prompt_version': SemanticAuditor.prompt_version,
+                'selection_policy': ('all-agent-turns-v1' if args.audit == 'continuous-semantic'
+                                     else SelectiveSemanticAuditor.policy),
+                'rules_domain': config.domain if args.audit == 'general-hybrid' else None,
+                'max_tokens': args.audit_max_tokens, 'timeout': args.audit_timeout, 'temperature': 0,
+            },
         )
     elif args.audit == "deterministic":
         orchestrator.before_tool_call = retail_cancellation_block_reason
@@ -245,7 +260,10 @@ def main(argv: list[str] | None = None) -> None:
     with args.output.open("x", encoding="utf-8") as output:
         output.write(results.model_dump_json(indent=2))
 
-    rejections = len(simulation.info.get("audit_rejections", []))
+    rejections = (simulation.info['model_audit']['counts']['blocked_proposals']
+                  if args.audit in MODEL_MODES else len(simulation.info.get("audit_rejections", [])))
+    if args.audit in MODEL_MODES:
+        print(f"Audit usage: {simulation.info['model_audit']['usage']}")
     print(
         f"Task {task.id}: reward={simulation.reward_info.reward:g}, "
         f"termination={simulation.termination_reason.value}, "
