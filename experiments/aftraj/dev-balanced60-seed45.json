@@ -1,0 +1,134 @@
+{
+  "name": "dev-balanced60-seed45-v6-routing-v2-context-v3",
+  "frozen_date": "2026-11-28",
+  "purpose": "Broader development comparison after prompt, routing and coding-context tuning; not held-out evaluation.",
+  "dataset": "ZBox008003/AFTraj",
+  "split": "dev",
+  "domains": null,
+  "limit": null,
+  "full_scan": false,
+  "sample": {
+    "policy": "domain-label-v1",
+    "per_group": 10,
+    "seed": 45,
+    "counts": {
+      "agentic/safe": 10,
+      "agentic/unsafe": 10,
+      "coding/safe": 10,
+      "coding/unsafe": 10,
+      "math/safe": 10,
+      "math/unsafe": 10
+    },
+    "conv_ids": [
+      "math_0381_unsafe_injected_static",
+      "math_0491_safe",
+      "coding_humaneval_0114_injected",
+      "hotpotqa_0389_safe",
+      "gaia_0126_safe",
+      "coding_mbpp_0125_safe",
+      "coding_humaneval_0144_injected",
+      "math_0264_unsafe_diagnosed",
+      "gaia_0039_safe",
+      "math_0384_unsafe_injected_static",
+      "math_0455_safe",
+      "safe_log_incident_triage_run4_idx55",
+      "math_0116_unsafe_injected_static",
+      "gaia_0020_unsafe_diagnosed",
+      "coding_humaneval_0017_safe",
+      "coding_humaneval_0028_injected",
+      "math_0253_safe",
+      "hotpotqa_0237_safe",
+      "coding_humaneval_0090_safe",
+      "hotpotqa_0070_unsafe_diagnosed",
+      "gaia_0118_safe",
+      "coding_mbpp_0110_safe",
+      "coding_humaneval_0024_injected",
+      "coding_humaneval_0138_safe",
+      "math_0044_unsafe_injected_static",
+      "math_0473_safe",
+      "math_0412_safe",
+      "math_0416_safe",
+      "math_0012_unsafe_diagnosed",
+      "hotpotqa_0044_unsafe_injected_reexec",
+      "math_0237_safe",
+      "hotpotqa_0390_unsafe_diagnosed",
+      "hotpotqa_0161_safe",
+      "gaia_0074_unsafe_diagnosed",
+      "gaia_0000_unsafe_injected_reexec",
+      "gaia_0091_unsafe_diagnosed",
+      "coding_mbpp_0016_safe",
+      "math_0473_unsafe_injected_static",
+      "coding_mbpp_0233_injected",
+      "coding_mbpp_0205_injected",
+      "math_0299_safe",
+      "hotpotqa_0319_safe",
+      "math_0188_unsafe_injected_static",
+      "coding_mbpp_0005_injected",
+      "hotpotqa_0150_safe",
+      "math_0283_unsafe_injected_static",
+      "math_0194_safe",
+      "hotpotqa_0204_safe",
+      "coding_humaneval_0143_injected",
+      "coding_humaneval_0109_safe",
+      "coding_mbpp_0036_injected",
+      "hotpotqa_0385_safe",
+      "math_0165_unsafe_injected_static",
+      "coding_humaneval_0042_safe",
+      "coding_humaneval_0084_safe",
+      "gaia_0077_unsafe_injected_reexec",
+      "gaia_0043_unsafe_diagnosed",
+      "coding_humaneval_0032_safe",
+      "coding_humaneval_0005_injected",
+      "math_0484_safe"
+    ],
+    "sha256": "4141704ede76bcc86f980d51fbca108d257368ce108362905c1420ddff62e002"
+  },
+  "adapter_version": "aftraj-coding-workflow-v3",
+  "model_settings": {
+    "model": "openai/gpt-4.1-mini",
+    "prompt_version": "semantic-evidence-v6",
+    "temperature": 0,
+    "max_tokens": 512,
+    "timeout": 30
+  },
+  "selection_policy": "writes-text-computation-v2",
+  "continuous_policy": "all-agent-turns-v1",
+  "hybrid_rules_config": "generic",
+  "modes": [
+    "allow-all",
+    "rules",
+    "selective-semantic",
+    "general-hybrid",
+    "continuous-semantic"
+  ],
+  "output_root": "results/aftraj/dev-balanced60-seed45-v6-routing-v2-context-v3",
+  "routing_scan_before_early_stopping": {
+    "agentic": {
+      "agent_proposals": 84,
+      "selected_proposals": 79,
+      "auditable_mistakes": 10,
+      "selected_mistakes": 10
+    },
+    "coding": {
+      "agent_proposals": 128,
+      "selected_proposals": 111,
+      "auditable_mistakes": 10,
+      "selected_mistakes": 10
+    },
+    "math": {
+      "agent_proposals": 208,
+      "selected_proposals": 208,
+      "auditable_mistakes": 10,
+      "selected_mistakes": 10
+    }
+  },
+  "prior_development_overlap": {
+    "conv_ids": [
+      "math_0384_unsafe_injected_static"
+    ],
+    "task_matching_conv_ids": [
+      "math_0384_unsafe_injected_static"
+    ]
+  },
+  "distinct_source_count": 60
+}

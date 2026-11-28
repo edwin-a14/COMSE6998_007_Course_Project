@@ -29,17 +29,17 @@ class Backend:
 
 
 class ModelModesTest(unittest.TestCase):
-    def test_evaluation_records_nested_usage_and_skips(self):
+    def test_evaluation_reviews_compute_arguments_and_records_nested_usage(self):
         backend = Backend()
         auditor = build_model_auditor("general-hybrid", model="fake", backend=backend)
         row = run_eval.evaluate(auditor, math_trajectory())
         self.assertEqual(row["status"], "ok")
-        self.assertEqual(row["pred_step"], 3)
-        self.assertEqual(row["num_audits"], 2)
+        self.assertEqual(row["pred_step"], 1)
+        self.assertEqual(row["num_audits"], 1)
         self.assertEqual(row["usage"]["model_calls"], 1)
         self.assertEqual(row["usage"]["input_tokens"], 10)
         self.assertEqual(row["usage"]["output_tokens"], 5)
-        self.assertEqual(row["usage"]["semantic_skips"], 1)
+        self.assertEqual(row["usage"]["semantic_skips"], 0)
         self.assertIn("details", row["steps"][-1])
 
     def test_model_failure_is_excluded_from_detection_metrics_but_counted(self):
@@ -90,15 +90,16 @@ class ModelModesTest(unittest.TestCase):
                     self.run_cli(path, backend, "--resume", *extra)
             self.assertEqual((path / "per_sample.jsonl").read_bytes(), before)
             config = json.loads(before.splitlines()[0])
-            self.assertEqual(config["model_config"]["selection_policy"], "writes-text-unknown-v1")
+            self.assertEqual(config["model_config"]["selection_policy"], "writes-text-computation-v2")
 
-    def test_resume_rejects_prompt_and_selection_version_changes(self):
+    def test_resume_rejects_prompt_selection_and_adapter_version_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)
             backend = Backend()
             self.run_cli(path, backend)
             for cls, attr in ((run_eval.SemanticAuditor, "prompt_version"),
-                              (run_eval.SelectiveSemanticAuditor, "policy")):
+                              (run_eval.SelectiveSemanticAuditor, "policy"),
+                              (run_eval, "ADAPTER_VERSION")):
                 with patch.object(cls, attr, "changed"), self.assertRaises(SystemExit):
                     self.run_cli(path, backend, "--resume")
             self.assertEqual(backend.calls, 1)

@@ -1,7 +1,7 @@
 """Select proposals for a supplied semantic auditor, without calling a model here.
 
-Only known read-only calls without text, thought or raw actions are skipped,
-along with empty turns. Selection is not a judgment that a proposal is wrong.
+Known read-only calls may skip review unless they compute, verify or carry
+executable arguments. Empty turns also skip. Selection is not a verdict.
 Compose this wrapper after RulesAuditor to avoid semantic work on rule blocks.
 """
 
@@ -11,8 +11,18 @@ from dataclasses import replace
 from audit_core.interface import AuditContext, Auditor, ToolSpec, Turn, Verdict
 
 
+# Routing heuristics, independent of benchmark labels or task correctness.
+# A sandboxed computation can still contain a consequential argument error.
+COMPUTATION_TOOLS = frozenset({
+    "compute", "calculator", "verify_answer", "run_tests", "python_interpreter",
+})
+EXECUTABLE_ARGUMENTS = frozenset({
+    "code", "solution_code", "test_code", "expression", "command", "commands", "script",
+})
+
+
 class SelectiveSemanticAuditor(Auditor):
-    """Apply the v1 selection policy to any shared-interface semantic auditor.
+    """Apply the v2 selection policy to any shared-interface semantic auditor.
 
     Unknown or unlisted tools are reviewed conservatively. Text includes
     otherwise read-only turns with a textual claim or recorded reasoning.
@@ -25,7 +35,7 @@ class SelectiveSemanticAuditor(Auditor):
     """
 
     name = "selective-semantic"
-    policy = "writes-text-unknown-v1"
+    policy = "writes-text-computation-v2"
 
     def __init__(self, semantic: Auditor):
         self.semantic = semantic
@@ -49,6 +59,10 @@ class SelectiveSemanticAuditor(Auditor):
             return True, "write_tool"
         if any(effect is None for effect in effects):
             return True, "unknown_tool"
+        if any(call.name in COMPUTATION_TOOLS for call in proposal.tool_calls):
+            return True, "computation_tool"
+        if any(EXECUTABLE_ARGUMENTS.intersection(call.kwargs) for call in proposal.tool_calls):
+            return True, "executable_arguments"
         return False, "read_only_tools"
 
     def audit(

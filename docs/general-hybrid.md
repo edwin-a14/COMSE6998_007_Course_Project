@@ -13,14 +13,24 @@ normalized history + complete proposal + tool catalog + context
      block: return immediately, no semantic request
      allow/warn: continue
   -> SelectiveSemanticAuditor
-     known read-only tool batch without text: skip semantic
-     write / text / thought / raw action / unknown tool: call semantic once
+     plain known read-only batch without claims: skip semantic
+     write / text / thought / raw action / unknown / computation: call semantic once
   -> SemanticAuditor -> LiteLLMBackend -> structured response -> Verdict
 ```
 
 There is no third hybrid model. Hybrid composes existing rule and semantic
 components. The selector sees the whole proposal; a read tool accompanied by
 text can still require semantic auditing. Missing metadata is not proof of safety.
+
+The current selector is `writes-text-computation-v2`. It reviews `compute`,
+`calculator`, `verify_answer`, `run_tests`, and `python_interpreter`, including
+sandboxed calls marked `side_effect=False`. It also reviews any known read-only
+call with an argument named `code`, `solution_code`, `test_code`, `expression`,
+`command`, `commands`, or `script`. These are explicit routing heuristics, not
+proof of error or exhaustive recognition of all executable tools. New names or
+argument conventions may need registry updates and a new policy version. Plain
+lookups and text-free handoffs still skip. Routing does not change the semantic
+prompt or the evidence supplied to it.
 
 | Mode | Rules | Selector | Semantic |
 |---|---|---|---|

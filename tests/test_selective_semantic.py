@@ -61,9 +61,45 @@ class SelectiveSemanticTest(unittest.TestCase):
         self.assertEqual(model.calls, [])
         self.assertEqual(verdict.decision, "allow")
         self.assertEqual(verdict.details["semantic_selection"], {
-            "policy": "writes-text-unknown-v1", "selected": False,
+            "policy": "writes-text-computation-v2", "selected": False,
             "reason": "read_only_tools", "semantic_invocations": 0,
         })
+
+    def test_computations_are_reviewed_even_without_side_effects_or_text(self):
+        for name in ("compute", "calculator", "verify_answer", "run_tests", "python_interpreter"):
+            with self.subTest(tool=name):
+                model = RecordingAuditor()
+                turn = proposal(name)
+                result = SelectiveSemanticAuditor(model).audit([], turn, [ToolSpec(name, side_effect=False)])
+                self.assertEqual(len(model.calls), 1)
+                self.assertIs(model.calls[0][1], turn)
+                self.assertEqual(result.details["semantic_selection"]["reason"], "computation_tool")
+
+    def test_executable_arguments_select_a_read_only_tool_with_a_different_name(self):
+        for key in ("code", "solution_code", "test_code", "expression", "command", "commands", "script"):
+            with self.subTest(argument=key):
+                model = RecordingAuditor()
+                turn = Turn(kind="agent", role="assistant", tool_calls=(
+                    ToolCall("lookup", {key: "return max(nums)"}), ToolCall("lookup", {})))
+                result = SelectiveSemanticAuditor(model).audit([], turn, TOOLS)
+                self.assertEqual(len(model.calls), 1)
+                self.assertEqual(result.details["semantic_selection"]["reason"], "executable_arguments")
+
+    def test_correct_and_incorrect_code_are_both_selected_without_being_judged(self):
+        for code in ("return min(nums)", "return max(nums)"):
+            with self.subTest(code=code):
+                model = RecordingAuditor()
+                turn = Turn(kind="agent", role="CodeTester", tool_calls=(
+                    ToolCall("run_tests", {"solution_code": code, "test_code": "assert f([1,2]) == 1"}),))
+                result = SelectiveSemanticAuditor(model).audit([], turn, [ToolSpec("run_tests", side_effect=False)])
+                self.assertEqual(len(model.calls), 1)
+                self.assertFalse(result.blocked)
+
+    def test_handoff_without_a_claim_still_skips(self):
+        model = RecordingAuditor()
+        SelectiveSemanticAuditor(model).audit([], proposal("transfer_to_codetester"),
+                                            [ToolSpec("transfer_to_codetester", side_effect=False)])
+        self.assertEqual(model.calls, [])
 
     def test_empty_turn_skips_without_claiming_it_was_checked(self):
         model = RecordingAuditor()

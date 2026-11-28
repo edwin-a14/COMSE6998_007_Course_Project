@@ -30,6 +30,10 @@ The AFTraj CLI now exposes `general-hybrid`, `selective-semantic`, and
 runner now connects these modes to generated text and tool-batch dispatch (see below). Three earlier synthetic live API
 checks passed; this is not a benchmark-wide quality result. For model evaluation
 commands and cost/error reporting, see [the AFTraj guide](aftraj/README.md).
+The current [60-trajectory development runbook](docs/aftraj-balanced60.md)
+freezes the sample, model settings and versioned prompt/routing/context.
+Known semantic failures are recorded in the
+[development log](docs/aftraj-development-pilot.md).
 Run the component's fake-backend tests without API calls:
 
 ```sh
@@ -490,7 +494,11 @@ command to regenerate the tables offline.
 and the shared SemanticAuditor. `selective-semantic` and `continuous-semantic`
 are available as controls at the same boundaries: complete tool batches before
 execution and generated text before delivery. Continuous mode audits both; the
-selective modes may skip known read-only batches. The fixed bootstrap greeting
+selective modes may skip plain known read-only batches. Computational tools and
+calls carrying code, expressions, or commands receive semantic review under
+`writes-text-computation-v2`, even without external side effects. See
+[the routing contract](docs/general-hybrid.md) for the exact tool/argument
+registry and its limits. The fixed bootstrap greeting
 is not a generated agent proposal and is not audited.
 
 `ModelAuditOrchestrator` audits the complete current proposal against preceding

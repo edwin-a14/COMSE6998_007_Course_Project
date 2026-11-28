@@ -2,9 +2,11 @@
 Standard library only."""
 
 import json
+from copy import deepcopy
 import unittest
 
 from aftraj.adapter import (
+    CODING_POLICY,
     ENTERPRISE_TOOLS,
     audit_context,
     audit_points,
@@ -135,6 +137,44 @@ class TurnsTest(unittest.TestCase):
         self.assertEqual(tool_specs(empty), list(ENTERPRISE_TOOLS))
         writes = {s.name for s in ENTERPRISE_TOOLS if s.side_effect}
         self.assertEqual(writes, {"report_writer", "payment_processor", "email_sender", "code_executor"})
+
+    def test_coding_context_supplies_handoff_and_verification_contract(self):
+        trajectory = math_trajectory()
+        trajectory.domain = "coding"
+        trajectory.tools = [{"name": "run_tests", "description": "Execute tests"}]
+        specs = {tool.name: tool for tool in tool_specs(trajectory)}
+        self.assertEqual(set(specs), {"run_tests", "transfer_to_codetester"})
+        self.assertEqual(specs["transfer_to_codetester"].parameters["properties"], {})
+        self.assertFalse(specs["transfer_to_codetester"].side_effect)
+        policy = audit_context(trajectory).policy
+        self.assertEqual(policy, CODING_POLICY)
+        self.assertIn("independently invoke run_tests", policy)
+        self.assertIn("FINAL_VERIFIED_TESTS_PASSED", policy)
+        self.assertIn("is preliminary progress unless", policy)
+        self.assertIn("deciding to skip, waive or dismiss", policy)
+        self.assertIn("Not yet making the handoff", policy)
+
+    def test_coding_metadata_does_not_depend_on_labels_or_future_turns(self):
+        first = math_trajectory()
+        first.domain = "coding"
+        first.tools = [{"name": "run_tests"}]
+        second = deepcopy(first)
+        second.conv_id = "different-safe-id"
+        second.label = "safe"
+        second.gold_answer = "different answer"
+        second.mistake_step = -1
+        second.mistake_reason = "private diagnosis"
+        second.turns = [turn("user", "different conversation")]
+        self.assertEqual(tool_specs(first), tool_specs(second))
+        self.assertEqual(audit_context(first), audit_context(second))
+
+    def test_exported_handoff_definition_is_preserved_without_duplicates(self):
+        trajectory = math_trajectory()
+        trajectory.domain = "coding"
+        trajectory.tools = [{"name": "transfer_to_codetester", "description": "Exported description"}]
+        specs = tool_specs(trajectory)
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0].description, "Exported description")
 
     def test_is_auditable(self):
         self.assertTrue(is_auditable(math_trajectory()))
