@@ -23,6 +23,28 @@ def fixture():
 
 
 class CompareTest(unittest.TestCase):
+    def model_run(self, mode, policy):
+        report, rows = fixture()
+        report["config"].update(auditor=mode, model_config={
+            "model": "fake", "max_tokens": 512, "timeout": 30, "temperature": 0,
+            "prompt_version": "v6", "selection_policy": policy,
+        })
+        return report, rows
+
+    def test_refuses_mixed_selective_policy_versions(self):
+        runs = [self.model_run("selective-semantic", "v1"),
+                self.model_run("general-hybrid", "v2")]
+        with patch("aftraj.compare.load_run", side_effect=runs):
+            with self.assertRaisesRegex(ValueError, "selection policies"):
+                compare(["a", "b"])
+
+    def test_continuous_can_use_its_own_selection_policy(self):
+        runs = [self.model_run("selective-semantic", "v2"),
+                self.model_run("general-hybrid", "v2"),
+                self.model_run("continuous-semantic", "all-agent-turns-v1")]
+        with patch("aftraj.compare.load_run", side_effect=runs):
+            self.assertIn("Completed in every mode: 2", compare(["a", "b", "c"]))
+
     def test_uses_common_completed_cohort(self):
         first = fixture()
         report, rows = deepcopy(first)

@@ -490,7 +490,11 @@ command to regenerate the tables offline.
 and the shared SemanticAuditor. `selective-semantic` and `continuous-semantic`
 are available as controls at the same boundaries: complete tool batches before
 execution and generated text before delivery. Continuous mode audits both; the
-selective modes may skip known read-only batches. The fixed bootstrap greeting
+selective modes may skip plain known read-only batches. Computational tools and
+calls carrying code, expressions, or commands receive semantic review under
+`writes-text-computation-v2`, even without external side effects. See
+[the routing contract](docs/general-hybrid.md) for the exact tool/argument
+registry and its limits. The fixed bootstrap greeting
 is not a generated agent proposal and is not audited.
 
 `ModelAuditOrchestrator` audits the complete current proposal against preceding

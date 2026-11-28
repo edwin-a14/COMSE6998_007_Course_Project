@@ -25,6 +25,7 @@ def compare(paths: list[Path]) -> str:
         for key, row in runs[0][1].items()
     }
     model_settings = None
+    selection_policies = set()
     for report, rows in runs:
         config = report["config"]
         for key in ("split", "domains", "limit", "sample", "full_scan", "result_version", "adapter_version"):
@@ -34,12 +35,16 @@ def compare(paths: list[Path]) -> str:
         if labels != cohort or len(rows) != config["trajectories"]:
             raise ValueError("Runs must contain the same complete trajectory selection")
         if config.get("model_config") is not None:
+            if config["auditor"] in ("selective-semantic", "general-hybrid"):
+                selection_policies.add(config["model_config"].get("selection_policy"))
             settings = {key: config["model_config"][key] for key in (
                 "model", "max_tokens", "timeout", "temperature", "prompt_version",
             )}
             if model_settings is not None and settings != model_settings:
                 raise ValueError("Runs use different model settings")
             model_settings = settings
+    if len(selection_policies) > 1:
+        raise ValueError("Selective and hybrid runs use different selection policies")
     completed = set.intersection(*[
         {key for key, row in rows.items() if row.get("status", "ok") == "ok"}
         for _, rows in runs
