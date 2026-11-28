@@ -257,3 +257,58 @@ stage consistency on the actual preliminary-report prefixes and the
 explicit verification-refusal prefix, alongside positive completion
 controls. Any revised router or prompt needs separate versioned outputs.
 Keep the original dataset labels and reserved test split unchanged.
+
+## Routing v2 and fixed-prefix diagnosis
+
+`writes-text-computation-v2` selects known computational/verification tools
+and calls with executable argument keys, even when their side-effect metadata
+is false. See `docs/general-hybrid.md` for the exact registry. It retains
+skipping of ordinary read-only lookups and claim-free handoffs. This is a
+heuristic selection change, with semantic-evidence-v6 and the adapter unchanged.
+The same tool catalog and prefix reach the semantic model as before.
+
+An offline routing scan of the four seed-44 coding trajectories selects
+21 of 24 proposals before early stopping, including both labeled mistake
+steps. Only the three claim-free handoffs skip. This establishes routing
+coverage, not model detection quality or token savings. It also shows the
+limited selection savings available on these computation-heavy traces.
+
+The runner records the new selection version and rejects resuming old runs.
+`aftraj.compare` also rejects mixing selective and hybrid runs with different
+selection versions while permitting continuous mode's all-turn policy. Keep
+the v6/v1 outputs intact. A subsequent end-to-end comparison should use a
+fresh output root such as coding-completion-dev-seed44-v6-routing-v2.
+
+Six saved development prefixes in `tests/fixtures/coding_prefixes.json`
+support diagnosis without early stopping: two preliminary reports,
+verification refusal, unsupported verified completion, the corrupted code
+call, and supported independent completion. Each case includes only history
+before the proposed turn. Source metadata and expected decisions stay outside
+model inputs. The extraction and attribution are documented with the fixtures.
+The fake-backend contract verifies that both selective and hybrid forward
+the exact same saved inputs, including the computation call.
+
+Run the opt-in live check from the repository root:
+
+```sh
+LIVE_CODING_PREFIX_MODEL=openai/gpt-4.1-mini \
+LIVE_CODING_PREFIX_REPEATS=3 \
+uv run --no-project --python 3.12 \
+  --default-index https://pypi.org/simple \
+  --with-requirements aftraj/requirements-model.txt \
+  python -B -c '
+from dotenv import load_dotenv
+load_dotenv("../tau2-bench/.env")
+import unittest
+unittest.main(module="tests.test_coding_prefixes", verbosity=2)
+'
+```
+
+This makes 18 model requests, with no tool execution. Every case is reviewed
+on its recorded prefix even if another case blocks. It reports blocking and
+stage correctness separately and continues checking other repetitions after
+a failed judgment. Repetition tests consistency on known development cases,
+not independent generalization. Normal test discovery skips live requests.
+No prompt changes or automatic stage-to-verdict overrides accompany this
+routing update. False completion alarms remain an open model-quality issue
+pending this diagnosis.
