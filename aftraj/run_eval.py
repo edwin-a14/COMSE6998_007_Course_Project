@@ -25,6 +25,7 @@ from typing import Any
 from aftraj.adapter import audit_context, audit_points, is_auditable, tool_specs
 from aftraj.data import DEFAULT_DATA_DIR, DOMAINS, SPLITS, Trajectory, load
 from aftraj.metrics import aggregate_by_domain, format_report, per_sample_metrics
+from aftraj.sampling import balanced_sample
 from audit_core import AllowAllAuditor, Auditor
 from audit_core.auditors import GENERIC_CONFIG, RulesAuditor, SemanticAuditError, SemanticAuditor, SelectiveSemanticAuditor
 from audit_core.modes import MODEL_MODES, build_model_auditor
@@ -108,7 +109,7 @@ def summarize(rows: list[dict[str, Any]], trajectories: list[Trajectory]) -> dic
 
 
 # Settings that change the rows a run produces; a resumed run must match them.
-RESUME_KEYS = ("auditor", "split", "domains", "limit", "full_scan", "model_config", "result_version")
+RESUME_KEYS = ("auditor", "split", "domains", "limit", "full_scan", "model_config", "result_version", "sample")
 
 
 def _load_previous(path: Path) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
@@ -159,12 +160,17 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     parser.add_argument("--env-file", type=Path, help="Optional local dotenv file for model credentials")
     parser.add_argument("--split", choices=SPLITS, default="dev")
     parser.add_argument("--domains", help=f"comma-separated: {','.join(DOMAINS)}")
-    parser.add_argument("--limit", type=int, help="first N trajectories (smoke test)")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--limit", type=int, help="first N trajectories (smoke test)")
+    selection.add_argument("--sample-per-group", type=int, help="Sample N safe and N unsafe trajectories per domain")
+    parser.add_argument("--sample-seed", type=int, default=43)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--output", type=Path, help="default: results/aftraj/<auditor>-<split>")
     parser.add_argument("--full-scan", action="store_true", help="audit every agent turn, not only up to the first block")
     parser.add_argument("--resume", action="store_true", help="skip trajectories already in per_sample.jsonl")
     args = parser.parse_args(argv)
+    if args.sample_per_group is not None and args.sample_per_group < 1:
+        parser.error("--sample-per-group must be positive")
 
     uses_model = args.auditor in MODEL_MODES
     if uses_model and (not args.model or not args.model.strip()):
@@ -199,6 +205,12 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     # Check before anything is written, so a bad selection leaves no output behind.
     if not trajectories:
         parser.error(f"no trajectories selected (split={args.split}, domains={domains}, limit={args.limit})")
+    sample = None
+    if args.sample_per_group is not None:
+        try:
+            trajectories, sample = balanced_sample(trajectories, args.sample_per_group, args.sample_seed)
+        except ValueError as exc:
+            parser.error(str(exc))
     output = args.output or RESULTS_ROOT / f"{args.auditor}-{args.split}"
     output.mkdir(parents=True, exist_ok=True)
     per_sample = output / "per_sample.jsonl"
@@ -208,6 +220,7 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     config = {
         "auditor": args.auditor, "split": args.split, "domains": domains, "limit": args.limit,
         "full_scan": args.full_scan, "trajectories": len(trajectories),
+        "sample": sample,
         "result_version": 2,
         "model_config": ({
             "model": args.model, "max_tokens": args.max_tokens, "timeout": args.timeout,

@@ -459,3 +459,63 @@ blocked two of the three safe development trajectories, so the v3 change remains
 a hypothesis until live validation. Use a fresh output directory for v3; prior
 prompt versions cannot be resumed. Historical smoke cases are development
 regressions, not an independent estimate of generalization.
+
+## Balanced development pilot
+
+Use two safe and two unsafe trajectories per domain for the first comparison,
+12 trajectories total. Sampling happens after the development split's source
+and task exclusions. The sample depends on sorted trajectory IDs and seed 43.
+Every run records the selected IDs, group counts, and content fingerprint in
+its config, and resume validates those fields. Labels control sampling and
+scoring through the runner. Auditors receive the existing adapter inputs.
+
+From the project root, create both offline baselines:
+
+```sh
+for mode in allow-all rules; do
+  uv run --no-project --python 3.12 --default-index https://pypi.org/simple \
+    --with-requirements aftraj/requirements.txt \
+    python -B -m aftraj.run_eval --auditor "$mode" \
+    --split dev --sample-per-group 2 --sample-seed 43 \
+    --output "results/aftraj/dev-balanced12-seed43/$mode" || break
+done
+```
+
+Run the three model modes with the same sample and model settings:
+
+```sh
+for mode in selective-semantic general-hybrid continuous-semantic; do
+  uv run --no-project --python 3.12 --default-index https://pypi.org/simple \
+    --with-requirements aftraj/requirements-model.txt \
+    python -B -m aftraj.run_eval --auditor "$mode" \
+    --model openai/gpt-4.1-mini --env-file ../tau2-bench/.env \
+    --split dev --sample-per-group 2 --sample-seed 43 \
+    --output "results/aftraj/dev-balanced12-seed43-live-v1/$mode" || break
+done
+```
+
+Choose a fresh output directory for a new run. Resume skips previously saved
+failures as well as successful trajectories. Model calls stop at the first
+block on each trajectory, so 12 trajectories can require many model requests.
+The seed-43 pilot contains 95 agent proposals before early stopping.
+
+Generate a matched comparison after all runs complete:
+
+```sh
+python -B -m aftraj.compare \
+  results/aftraj/dev-balanced12-seed43/allow-all \
+  results/aftraj/dev-balanced12-seed43/rules \
+  results/aftraj/dev-balanced12-seed43-live-v1/selective-semantic \
+  results/aftraj/dev-balanced12-seed43-live-v1/general-hybrid \
+  results/aftraj/dev-balanced12-seed43-live-v1/continuous-semantic
+```
+
+The report validates selection, labels, and model settings, and calculates
+detection metrics on trajectories completed by every mode. Usage includes
+failed requests. Inspect individual runs' error counts and exclude failures
+when discussing detection. A false block can reduce subsequent audit calls
+through early stopping, so compare detection quality alongside cost.
+
+This balanced pilot is for development and error inspection. Its class and
+domain proportions differ from the full dataset, and six unsafe trajectories
+give only an initial view of recall.
