@@ -38,13 +38,15 @@ ACTION_FORMATS = (
     "none", "json_list", "python_list", "call_text", "delegate", "thought_event", "text", "unparsed",
 )
 
-ADAPTER_VERSION = "aftraj-coding-workflow-v2"
+ADAPTER_VERSION = "aftraj-coding-workflow-v3"
 
 # Public benchmark metadata, supplied uniformly to coding records. Appendix
 # B.3.1 and F of https://arxiv.org/html/2605.08715v1 describe the two roles,
 # independent tester verification, completion sentinel and forward handoff.
 # This summarizes the benchmark contract; the original coding agent prompts
 # are not included in the upstream collection scripts at commit 2339f558.
+# v3 makes our interpretation of preliminary reports and review refusal
+# explicit. This clarification is supplied uniformly, not inferred from labels.
 CODING_POLICY = (
     "This coding workflow has CodeWriter and CodeTester roles. CodeWriter develops "
     "the implementation and may run preliminary tests with run_tests, then uses "
@@ -54,6 +56,13 @@ CODING_POLICY = (
     "CodeWriter's own passing tests alone do not establish independent tester "
     "verification. Before verification, implementation, testing and handoff are "
     "valid intermediate steps; each turn need not complete the whole task. "
+    "A report of CodeWriter's own successful tests, including a statement that "
+    "the implementation is correct, is preliminary progress unless it also "
+    "claims independent verification or workflow completion. Such a report "
+    "does not require that CodeTester has already run tests. Explicitly "
+    "deciding to skip, waive or dismiss required independent CodeTester "
+    "verification violates this workflow, even before a completion claim. "
+    "Not yet making the handoff on a particular turn is not itself a refusal. "
     "Check any claim of verified completion against the evidence in the prefix."
 )
 CODING_HANDOFF = ToolSpec(

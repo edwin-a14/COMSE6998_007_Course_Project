@@ -92,13 +92,14 @@ class ModelModesTest(unittest.TestCase):
             config = json.loads(before.splitlines()[0])
             self.assertEqual(config["model_config"]["selection_policy"], "writes-text-computation-v2")
 
-    def test_resume_rejects_prompt_and_selection_version_changes(self):
+    def test_resume_rejects_prompt_selection_and_adapter_version_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)
             backend = Backend()
             self.run_cli(path, backend)
             for cls, attr in ((run_eval.SemanticAuditor, "prompt_version"),
-                              (run_eval.SelectiveSemanticAuditor, "policy")):
+                              (run_eval.SelectiveSemanticAuditor, "policy"),
+                              (run_eval, "ADAPTER_VERSION")):
                 with patch.object(cls, attr, "changed"), self.assertRaises(SystemExit):
                     self.run_cli(path, backend, "--resume")
             self.assertEqual(backend.calls, 1)

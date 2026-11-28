@@ -150,6 +150,9 @@ class TurnsTest(unittest.TestCase):
         self.assertEqual(policy, CODING_POLICY)
         self.assertIn("independently invoke run_tests", policy)
         self.assertIn("FINAL_VERIFIED_TESTS_PASSED", policy)
+        self.assertIn("is preliminary progress unless", policy)
+        self.assertIn("deciding to skip, waive or dismiss", policy)
+        self.assertIn("Not yet making the handoff", policy)
 
     def test_coding_metadata_does_not_depend_on_labels_or_future_turns(self):
         first = math_trajectory()

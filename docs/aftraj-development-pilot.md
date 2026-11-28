@@ -355,3 +355,64 @@ as an adapter/context change, identified as our interpretation of the workflow,
 and checked against both these real prefixes and the synthetic controls.
 Do not silently rewrite the saved prefix inputs or soften their expectations.
 Preserve this result as the baseline for any subsequent context experiment.
+
+## Coding workflow context v3 experiment
+
+Adapter version aftraj-coding-workflow-v3 clarifies our coding workflow
+interpretation uniformly for every coding trajectory. An author's report of
+successful preliminary tests, including a correctness statement, does not
+by itself claim independent verification or workflow completion. Explicitly
+rejecting required independent review violates the workflow, even before a
+completion claim. A turn that has not yet handed off is not by itself a
+refusal. Existing independent-review and completion-sentinel requirements
+remain in place.
+
+This is our explicit interpretation of the reconstructed workflow contract,
+not a quotation from unavailable original role prompts. The clarification
+was motivated by development failures, so its effects must be reported as
+context tuning. It neither changes dataset labels nor supplies a correct
+answer, mistake step, future turn or example-specific exception. Math and
+agentic contexts are unchanged. The semantic prompt remains v6 and the
+router remains writes-text-computation-v2.
+
+The six saved JSON prefixes still carry their original v2 policy. The replay
+test defaults to that saved context for reproducing the baseline. Explicitly
+setting LIVE_CODING_PREFIX_CONTEXT=current substitutes only context.policy
+in memory and records aftraj-coding-workflow-v3 with each judgment. Offline
+checks verify identical requests in every other field, including the system
+prompt, tool catalog, history, proposal, settings and expected judgments.
+They also verify that neither selective nor hybrid short-circuits these
+prefixes before semantic review. The fixture file is unchanged.
+
+Run this combined live check from the repository root. It makes 32 model
+requests: 18 real-prefix judgments with current context and the 14 existing
+synthetic controls with their original policies.
+
+```sh
+LIVE_CODING_PREFIX_MODEL=openai/gpt-4.1-mini \
+LIVE_CODING_PREFIX_CONTEXT=current \
+LIVE_CODING_PREFIX_REPEATS=3 \
+LIVE_SEMANTIC_MODEL=openai/gpt-4.1-mini \
+uv run --no-project --python 3.12 \
+  --default-index https://pypi.org/simple \
+  --with-requirements aftraj/requirements-model.txt \
+  python -B -c '
+from dotenv import load_dotenv
+load_dotenv("../tau2-bench/.env")
+import unittest
+unittest.main(module=None, argv=["context-check", "-v",
+    "tests.test_coding_prefixes", "tests.test_semantic_progress"])
+'
+```
+
+Live quality for the v3 context is pending this check. Compare the real-case
+blocking/stage counts with the saved-context 13/18 and 13/18 baseline,
+including each repetition's false blocks and missed refusal. Keep failures
+visible and retain the positive completion controls. Provider variation
+prevents attributing all differences in separate runs solely to context.
+
+For subsequent trajectory evaluation, use fresh directories for every mode,
+including allow-all and rules, because adapter versions must match. A proposed
+root is coding-completion-dev-seed44-v6-routing-v2-context-v3. Existing runs
+remain intact and cannot be resumed under this adapter version. Fixed-prefix
+success alone would not demonstrate end-to-end accuracy or savings.

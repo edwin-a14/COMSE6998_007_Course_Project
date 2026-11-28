@@ -22,3 +22,9 @@ These controls were selected after examining development failures. They are
 neither an independent evaluation set nor evidence of generalization. No
 reserved test trajectories are included. Passing fake-backend tests verifies
 serialization and routing, not semantic correctness.
+
+The saved JSON remains the v2 baseline. Set `LIVE_CODING_PREFIX_CONTEXT=current`
+to replay the same proposals with the current adapter's coding policy. That
+experiment replaces only `context.policy` in memory, preserving all other
+inputs and expectations. It logs the context variant and adapter version per
+judgment. Omitting the setting retains the saved v2 context.
