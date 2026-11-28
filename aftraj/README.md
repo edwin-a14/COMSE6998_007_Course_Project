@@ -525,3 +525,8 @@ records initial results, missing coding workflow context, safe-label
 disagreements, and the adapter version used for the next comparison.
 The runner checks adapter versions on resume and the comparison command
 requires matching versions across modes.
+
+Prompt semantic-evidence-v4 adds a focused distinction between preliminary
+test reports and verified-completion claims. The development pilot analysis
+includes a twelve-case opt-in live regression and a separate four-trajectory
+coding development check using seed 44.
