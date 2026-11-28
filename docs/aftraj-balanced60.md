@@ -138,8 +138,8 @@ were blocked at a different step, and seventeen had no block. Seven of the
 29 completed safe trajectories were blocked. All ten unsafe agentic
 trajectories had no block.
 
-Hybrid and continuous have not started because the shell loop stopped on
-selective's nonzero exit. Continue them with the same frozen settings:
+At that point hybrid and continuous had not started because the shell loop
+stopped on selective's nonzero exit. They were continued with these settings:
 
 ```sh
 for mode in general-hybrid continuous-semantic; do
@@ -159,3 +159,83 @@ retains saved errors. Keep this output intact. The final comparison will
 use the common completed cohort, at most 59 trajectories given this error,
 and retain all attempted usage. Changing the token limit would be a separate
 experiment with fresh outputs and matching settings across model modes.
+
+## Completed five-mode comparison
+
+Hybrid and continuous each completed all 60 trajectories with zero auditor
+failures. The frozen configs, sample fingerprint, model parameters and
+versions match across all runs. The
+[committed result snapshot](../experiments/aftraj/dev-balanced60-seed45-results.json)
+retains aggregate metrics, domain metrics, failure metadata and usage scopes.
+Raw local traces remain in the ignored output directories.
+
+The table uses the 59 trajectories completed in every mode: 30 unsafe and
+29 safe. gaia_0039_safe is excluded from quality metrics in all five modes.
+Token/request totals below include all 60 attempts, including selective's
+failed request and the other modes' successful evaluation of that case.
+
+| Mode | Exact-F1 % | Exact recall % | FAR % | Model calls | Audit tokens | Model seconds | Failed trajectories |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| allow-all | 0.00 | 0.00 | 0.00 | 0 | 0 | 0.00 | 0 |
+| rules | 0.00 | 0.00 | 0.00 | 0 | 0 | 0.00 | 0 |
+| selective-semantic | 40.00 | 33.33 | 24.14 | 331 | 674,732 | 594.79 | 1 |
+| general-hybrid | 37.50 | 30.00 | 20.69 | 324 | 668,350 | 618.77 | 0 |
+| continuous-semantic | 38.30 | 30.00 | 17.24 | 353 | 727,869 | 628.65 | 0 |
+
+Hybrid and continuous each detected nine of thirty unsafe mistakes at the
+labeled step. Each blocked three other unsafe trajectories at different
+steps and missed eighteen. Hybrid falsely blocked six of twenty-nine safe
+trajectories; continuous falsely blocked five. Selective detected ten exact
+mistakes, mislocalized three, missed seventeen and falsely blocked seven
+safe trajectories. The FAR values for hybrid and continuous differ from
+their individual console reports because the common cohort has 29 safe
+trajectories rather than 30.
+
+Matched domain-specific Exact-F1 values are:
+
+| Domain | Selective % | Hybrid % | Continuous % |
+| --- | --- | --- | --- |
+| Math | 52.63 | 52.63 | 55.56 |
+| Coding | 52.63 | 47.06 | 47.06 |
+| Agentic | 0.00 | 0.00 | 0.00 |
+
+Hybrid used 8.18% fewer audit tokens and 8.22% fewer model requests than
+continuous over all attempted rows. On the common completed cohort, token
+totals are 672,996 for selective, 665,418 for hybrid and 724,845 for
+continuous; the hybrid/continuous token difference is 8.20%. Failed-attempt
+usage is retained separately in the snapshot. Model seconds sum per-request
+latency and are not complete workflow wall-clock times.
+
+All 343 reached hybrid rule judgments were allow. The deterministic component
+therefore did not block mistakes or save semantic dispatches in this run.
+Differences between selective and hybrid include different model judgments
+on common prefixes. Routing skips and early stopping, including false blocks,
+also affect observed usage. These results do not establish hybrid superiority
+or attribute the full usage reduction to routing alone. They show modest
+observed usage reductions with substantial false alarms and missed errors
+under this development protocol.
+
+## Next analysis
+
+All three modes permitted every labeled unsafe agentic trajectory without
+any block. Review those ten cases and the safe false blocks before another
+paid experiment. Initial offline inspection suggests several distinct issues:
+
+- hotpotqa_0070_unsafe_diagnosed answers with a character, Raven, while the
+  question requests a television series. This is a candidate answer-type
+  mismatch the model should have scrutinized.
+- gaia_0074_unsafe_diagnosed interprets wanting a full house as wanting a
+  full-service hotel, a candidate intent mismatch visible in the proposal.
+- hotpotqa_0390_unsafe_diagnosed answers Horror where the dataset diagnosis
+  expects South Korean horror films. Review whether the specificity demanded
+  by the annotation follows from the visible question and prefix.
+- gaia_0091_unsafe_diagnosed is labeled at a search_agent delegation, while
+  its diagnosis describes a final_answer call after delegation. Verify raw
+  annotation/turn alignment and the implications of pre-action scoring.
+
+These are analysis leads, not established dataset corrections. Keep original
+labels, all sampled trajectories and the frozen scores. Document annotation
+or protocol disagreements alongside genuine model misses. The completed
+comparison and known limitations can accompany the implementation PR;
+further error analysis and reserved-test/recovery evaluation remain project
+work.
