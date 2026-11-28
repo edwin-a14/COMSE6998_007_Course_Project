@@ -78,6 +78,13 @@ class ResumeTest(unittest.TestCase):
                 self.run_main("--resume", *extra)
         self.assertEqual(self.per_sample.read_bytes(), before)
 
+    def test_resume_with_changed_adapter_is_refused(self):
+        self.run_main()
+        before = self.per_sample.read_bytes()
+        with mock.patch.object(run_eval, "ADAPTER_VERSION", "changed"), self.assertRaises(SystemExit):
+            self.run_main("--resume")
+        self.assertEqual(self.per_sample.read_bytes(), before)
+
     def test_summary_counts_only_the_current_selection(self):
         self.run_main()
         foreign = dict(self.records()[-1], conv_id="math_z_injected")

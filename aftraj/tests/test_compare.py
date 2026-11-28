@@ -48,3 +48,11 @@ class CompareTest(unittest.TestCase):
         with patch("aftraj.compare.load_run", side_effect=[first, second]):
             with self.assertRaisesRegex(ValueError, "complete trajectory selection"):
                 compare(["a", "b"])
+
+    def test_refuses_different_adapter_versions(self):
+        first = fixture()
+        second = deepcopy(first)
+        second[0]["config"]["adapter_version"] = "changed"
+        with patch("aftraj.compare.load_run", side_effect=[first, second]):
+            with self.assertRaisesRegex(ValueError, "adapter_version"):
+                compare(["a", "b"])

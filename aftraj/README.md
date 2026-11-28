@@ -519,3 +519,9 @@ through early stopping, so compare detection quality alongside cost.
 This balanced pilot is for development and error inspection. Its class and
 domain proportions differ from the full dataset, and six unsafe trajectories
 give only an initial view of recall.
+
+The [development pilot analysis](../docs/aftraj-development-pilot.md)
+records initial results, missing coding workflow context, safe-label
+disagreements, and the adapter version used for the next comparison.
+The runner checks adapter versions on resume and the comparison command
+requires matching versions across modes.

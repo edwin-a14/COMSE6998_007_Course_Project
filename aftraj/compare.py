@@ -27,7 +27,7 @@ def compare(paths: list[Path]) -> str:
     model_settings = None
     for report, rows in runs:
         config = report["config"]
-        for key in ("split", "domains", "limit", "sample", "full_scan", "result_version"):
+        for key in ("split", "domains", "limit", "sample", "full_scan", "result_version", "adapter_version"):
             if config.get(key) != reference.get(key):
                 raise ValueError(f"Runs differ on {key}")
         labels = {key: (row["domain"], row["label"], row["gt_step"]) for key, row in rows.items()}

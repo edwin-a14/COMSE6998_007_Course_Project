@@ -22,7 +22,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from aftraj.adapter import audit_context, audit_points, is_auditable, tool_specs
+from aftraj.adapter import ADAPTER_VERSION, audit_context, audit_points, is_auditable, tool_specs
 from aftraj.data import DEFAULT_DATA_DIR, DOMAINS, SPLITS, Trajectory, load
 from aftraj.metrics import aggregate_by_domain, format_report, per_sample_metrics
 from aftraj.sampling import balanced_sample
@@ -109,7 +109,7 @@ def summarize(rows: list[dict[str, Any]], trajectories: list[Trajectory]) -> dic
 
 
 # Settings that change the rows a run produces; a resumed run must match them.
-RESUME_KEYS = ("auditor", "split", "domains", "limit", "full_scan", "model_config", "result_version", "sample")
+RESUME_KEYS = ("auditor", "split", "domains", "limit", "full_scan", "model_config", "result_version", "sample", "adapter_version")
 
 
 def _load_previous(path: Path) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
@@ -221,6 +221,7 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         "auditor": args.auditor, "split": args.split, "domains": domains, "limit": args.limit,
         "full_scan": args.full_scan, "trajectories": len(trajectories),
         "sample": sample,
+        "adapter_version": ADAPTER_VERSION,
         "result_version": 2,
         "model_config": ({
             "model": args.model, "max_tokens": args.max_tokens, "timeout": args.timeout,
