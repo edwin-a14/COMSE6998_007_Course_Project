@@ -96,8 +96,23 @@ class ParityTest(unittest.TestCase):
 
 class EveryAuditorRunsOnBothBenchmarksTest(unittest.TestCase):
     def auditors(self):
+        from audit_core.auditors import SemanticAuditor, SelectiveSemanticAuditor
+        from audit_core.model import ModelResponse
+        from audit_core.modes import MODEL_MODES, build_model_auditor
+
+        class FakeBackend:
+            def complete(self, request):
+                return ModelResponse(
+                    '{"stage":"uncertain","stage_evidence":"Fixture stage","error_evidence":[],"decision":"allow","score":0,"reason":"Fixture response","rule_ids":[]}',
+                    input_tokens=10, output_tokens=5,
+                )
+
         built = {name: factory() for name, factory in AUDITORS.items()}
         built["rules-retail"] = RulesAuditor(RETAIL)
+        built["semantic-general"] = SemanticAuditor("fake", backend=FakeBackend())
+        built["selective-semantic"] = SelectiveSemanticAuditor(built["semantic-general"])
+        for mode in MODEL_MODES:
+            built[mode] = build_model_auditor(mode, model="fake", backend=FakeBackend())
         built["composite"] = CompositeAuditor(*built.values())
         return built
 

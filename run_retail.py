@@ -1,6 +1,7 @@
 """Run and score one τ²-bench retail simulation."""
 
 import argparse
+import math
 from pathlib import Path
 from random import Random
 
@@ -16,7 +17,11 @@ from tau2.runner import (
 )
 from tau2.user.user_simulator import UserSimulator
 
-from deterministic_audit import GeneralDeterministicAuditor
+from deterministic_audit import DOMAIN_CONFIGS, GeneralDeterministicAuditor
+from audit_core.auditors import SemanticAuditor, SelectiveSemanticAuditor
+from audit_core.modes import MODEL_MODES, build_model_auditor
+from tau2_model_audit import ModelAuditOrchestrator
+from tau2_adapter import tool_specs, audit_context
 from replay_cancellation_audit import cancellation_batch
 from semantic_audit import (
     audit_tool_call, cancellation_context, other_pending_order, should_audit_tool,
@@ -33,11 +38,15 @@ def main(argv: list[str] | None = None) -> None:
         "--audit",
         choices=(
             "off", "deterministic", "deterministic-general", "semantic", "continuous",
-            *RULE_AUDIT_MODES,
+            *RULE_AUDIT_MODES, *MODEL_MODES,
         ),
         default="off",
     )
     parser.add_argument("--audit-llm", default="openai/gpt-4.1-mini")
+    parser.add_argument('--audit-max-retries', type=int, default=2,
+                        help='Additional attempts after a blocked model-audited proposal')
+    parser.add_argument('--audit-max-tokens', type=int, default=512)
+    parser.add_argument('--audit-timeout', type=float, default=30)
     faults = parser.add_mutually_exclusive_group()
     faults.add_argument(
         "--inject-cancellation-fault", action="store_true",
@@ -91,6 +100,15 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--no-recovery requires --checkpoint")
     if args.inject_cancellation_fault and args.audit not in ("deterministic", *RULE_AUDIT_MODES):
         parser.error("--inject-cancellation-fault requires --audit deterministic, rules-only, or hybrid")
+    if args.audit_max_tokens < 1 or not math.isfinite(args.audit_timeout) or args.audit_timeout <= 0:
+        parser.error('--audit-max-tokens and --audit-timeout must be positive and finite')
+    if args.audit_max_retries < 0:
+        parser.error('--audit-max-retries must be nonnegative')
+    if args.audit in MODEL_MODES and (
+        args.checkpoint or args.no_recovery or any(value for key, value in vars(args).items()
+                                                 if key.startswith('inject_'))
+    ):
+        parser.error('Model batch modes do not yet support fault injection or checkpoint recovery')
     config = TextRunConfig(
         domain="retail",
         task_split_name=args.task_split,
@@ -147,7 +165,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     # Match the seed of the first trial in the stock benchmark CLI.
     trial_seed = Random(config.seed).randint(0, 1_000_000)
-    orchestrator = AuditOrchestrator(
+    orchestrator_class = ModelAuditOrchestrator if args.audit in MODEL_MODES else AuditOrchestrator
+    orchestrator = orchestrator_class(
         domain=config.domain,
         agent=agent,
         user=user,
@@ -187,7 +206,23 @@ def main(argv: list[str] | None = None) -> None:
         return feedback + " Review the request and earlier tool results before proposing the next action."
 
     general_auditor = None
-    if args.audit == "deterministic":
+    if args.audit in MODEL_MODES:
+        orchestrator.configure_audit(
+            build_model_auditor(args.audit, model=args.audit_llm,
+                               rules_config=DOMAIN_CONFIGS[config.domain],
+                               max_tokens=args.audit_max_tokens, timeout=args.audit_timeout),
+            tool_specs(environment), audit_context(environment, config.domain),
+            max_retries=args.audit_max_retries,
+            configuration={
+                'mode': args.audit, 'model': args.audit_llm,
+                'prompt_version': SemanticAuditor.prompt_version,
+                'selection_policy': ('all-agent-turns-v1' if args.audit == 'continuous-semantic'
+                                     else SelectiveSemanticAuditor.policy),
+                'rules_domain': config.domain if args.audit == 'general-hybrid' else None,
+                'max_tokens': args.audit_max_tokens, 'timeout': args.audit_timeout, 'temperature': 0,
+            },
+        )
+    elif args.audit == "deterministic":
         orchestrator.before_tool_call = retail_cancellation_block_reason
     elif args.audit == "deterministic-general":
         general_auditor = GeneralDeterministicAuditor.for_orchestrator(orchestrator, config.domain)
@@ -213,6 +248,8 @@ def main(argv: list[str] | None = None) -> None:
     if checkpoint is not None:
         simulation.info["checkpoint_trace"] = str(args.checkpoint)
         simulation.info["recovery_enabled"] = orchestrator.recovery_enabled
+    if args.audit in MODEL_MODES:
+        simulation.info["audit_model"] = args.audit_llm
     if args.audit in ("semantic", "continuous", "hybrid"):
         simulation.info.update(audit_model=args.audit_llm, semantic_checks=semantic_checks)
     if general_auditor is not None:
@@ -223,7 +260,10 @@ def main(argv: list[str] | None = None) -> None:
     with args.output.open("x", encoding="utf-8") as output:
         output.write(results.model_dump_json(indent=2))
 
-    rejections = len(simulation.info.get("audit_rejections", []))
+    rejections = (simulation.info['model_audit']['counts']['blocked_proposals']
+                  if args.audit in MODEL_MODES else len(simulation.info.get("audit_rejections", [])))
+    if args.audit in MODEL_MODES:
+        print(f"Audit usage: {simulation.info['model_audit']['usage']}")
     print(
         f"Task {task.id}: reward={simulation.reward_info.reward:g}, "
         f"termination={simulation.termination_reason.value}, "
@@ -244,6 +284,10 @@ def main(argv: list[str] | None = None) -> None:
             f"blocked by: {', '.join(rules) or 'none'}, "
             f"warnings: {', '.join(warnings) or 'none'}"
         )
+    if args.audit in MODEL_MODES and not simulation.info['model_audit']['evaluation_valid']:
+        print('Auditor execution failed: exclude this run from agent-quality comparisons.')
+        print(f"Saved {args.output}")
+        raise SystemExit(1)
     print(f"Saved {args.output}")
 
 
