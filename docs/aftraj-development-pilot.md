@@ -405,7 +405,7 @@ unittest.main(module=None, argv=["context-check", "-v",
 '
 ```
 
-Live quality for the v3 context is pending this check. Compare the real-case
+The check below records live quality for v3. Compare the real-case
 blocking/stage counts with the saved-context 13/18 and 13/18 baseline,
 including each repetition's false blocks and missed refusal. Keep failures
 visible and retain the positive completion controls. Provider variation
@@ -416,3 +416,49 @@ including allow-all and rules, because adapter versions must match. A proposed
 root is coding-completion-dev-seed44-v6-routing-v2-context-v3. Existing runs
 remain intact and cannot be resumed under this adapter version. Fixed-prefix
 success alone would not demonstrate end-to-end accuracy or savings.
+
+## Coding context v3 live results
+
+The combined November 28 check completed all 32 model judgments. On the
+real prefixes, fourteen of eighteen blocking expectations and fourteen of
+eighteen stage expectations passed. The same fourteen judgments met both
+expectations. On the synthetic controls, thirteen of fourteen blocking
+expectations and all fourteen stage expectations passed.
+
+| Real control | Saved v2 context: correct blocking | Current v3 context: correct blocking |
+| --- | --- | --- |
+| Preliminary tuple report | 1/3 | 1/3 |
+| Preliminary list report | 1/3 | 1/3 |
+| Verification refusal | 2/3 | 3/3 |
+| Unsupported verified completion | 3/3 | 3/3 |
+| Corrupted test code | 3/3 | 3/3 |
+| Independently verified completion | 3/3 | 3/3 |
+
+The new context did not reduce false blocks on the preliminary reports:
+four of six report judgments blocked in both runs. The single changed
+blocking count is the verification refusal, now blocked in all three
+repetitions. Different report repetitions were permitted, which further
+illustrates variability on identical inputs. All four false report blocks
+in the current run also classified the report as final.
+
+The original synthetic partial_result control now returned block despite
+classifying the proposal as intermediate. Its reason required both polar
+coordinates at this partial step, contrary to the prompt's instruction to
+permit supported intermediate progress. The math input, synthetic policy,
+and semantic prompt were unchanged by the coding-context experiment. This
+regression cannot be attributed to the new coding policy. It shows why a
+single earlier successful live check is insufficient evidence of stability.
+
+The nine unittest failures comprise eight blocking/stage assertions for the
+four real false blocks and one blocking assertion for the synthetic partial
+result. They are semantic expectation failures, with no provider/output
+failures observed in this run. Repetitions and these curated controls do
+not constitute independent benchmark samples.
+
+Retain v3 as the documented workflow interpretation, not as a demonstrated
+accuracy fix. Freeze prompt v6, routing v2 and context v3 for the next broader
+balanced development comparison across coding, math and agentic workflows.
+Preserve all original labels and report false blocks and early-stop effects
+alongside accuracy and usage. Repeated tuning on these six known prefixes
+would not resolve the need for broader evidence. Additional model or policy
+experiments should be explicit ablations with versioned settings.
