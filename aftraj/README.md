@@ -11,12 +11,21 @@ parser. Existing `allow-all`, `rules`, and `rules-unknown` modes remain availabl
 | `selective-semantic` | The same selection policy and semantic auditor, without rules |
 | `continuous-semantic` | The same semantic auditor on every agent turn |
 
-The v1 selector audits text, reasoning, raw actions, writes and unknown tools.
-Empty turns and known read-only calls without other content skip the model.
+The `writes-text-computation-v2` selector audits text, reasoning, raw actions,
+writes, unknown tools, known computations and calls carrying executable
+arguments. Plain known read-only calls and empty turns can skip the model.
+The exact routing registry and limits are in the
+[shared mode guide](../docs/general-hybrid.md).
 One entire proposal is judged at a time. Generic rules do not require retail
 authentication: a retail caller must explicitly pass `DOMAIN_CONFIGS["retail"]`
 to `audit_core.modes.build_model_auditor`. These new CLI modes are available
-only in the offline AFTraj runner; live tau2 hooks/recovery are unchanged.
+in the AFTraj runner and the shared live tau2 runtime. See the
+[runtime documentation](../README.md#shared-model-auditing-in-the-retail-runtime).
+
+For the current frozen 60-trajectory development comparison, use the
+[balanced evaluation runbook](../docs/aftraj-balanced60.md). The
+[development log](../docs/aftraj-development-pilot.md) records prompt/context
+tuning and the remaining false-alarm and consistency failures.
 
 Model evaluation makes paid API calls. From the project root, a small **dev**
 run can be started with the following command. `--limit` limits trajectories,
@@ -129,11 +138,13 @@ result. `call.kwargs` is always a dict. `call.key()` identifies "the same call"
 regardless of its id.
 
 `ToolSpec`: `name`, `description`, `parameters` (a JSON schema, or `None`;
-AFTraj has none), and `side_effect` (`True` = write, `False` = read-only,
+the reconstructed coding handoff supplies a schema), and `side_effect` (`True` = write, `False` = read-only,
 `None` = unknown).
 
 `AuditContext`: `domain`, `task` (the user's request, when the benchmark
-states it separately), and `policy` (τ² domain policy; `None` for AFTraj).
+states it separately), and `policy`. Coding AFTraj records receive our
+reconstructed workflow policy; other AFTraj domains currently use `None`.
+τ² supplies the domain's policy.
 
 `Verdict`, the return value:
 
@@ -150,9 +161,10 @@ states it separately), and `policy` (τ² domain policy; `None` for AFTraj).
 ### Rules every auditor must follow
 
 1. **Use only the arguments.** Do not read τ² environments or databases, do
-   not hard-code tool names of one domain, and do not import benchmark code.
+   do not import benchmark code or use label-specific exceptions.
    Domain knowledge comes in through `tools[i].side_effect`, `context.policy`,
    or constructor configuration (as `RulesAuditor(DomainConfig(...))` does).
+   Any tool-name/argument routing registry must be documented and versioned.
 2. **Audit text-only proposals.** In AFTraj most mistake steps make no tool
    call, for example a wrong final answer or a claim that contradicts the
    last tool result.
@@ -222,11 +234,10 @@ verdict = auditor.audit(
 )
 ```
 
-The live τ² hook (`deterministic_audit.GeneralDeterministicAuditor`) still
-audits one write call at a time through `before_tool_call`, so text-only
-assistant turns are not audited live yet. A generic per-turn hook that calls
-`auditor.audit(...)` for every assistant message has to be added to the
-orchestrator (`tau2_audit.py`); coordinate this with Edwin.
+The legacy deterministic τ² hook audits one write call at a time through
+`before_tool_call`. The shared model modes use `tau2_model_audit.py` for
+complete pre-execution tool batches and pre-delivery generated text, with
+bounded revision. See the runtime documentation linked above for boundaries.
 
 ## 3. AFTraj evaluation
 
@@ -402,22 +413,25 @@ uv run --no-project --with-requirements aftraj/requirements.txt python -B -m uni
 
 # everything, including τ² parity and contract tests (from the project root;
 # the real-data tests are skipped here because the τ² venv has no pyarrow)
-PYTHONUTF8=1 ../tau2-bench/.venv/Scripts/python.exe -B -m unittest discover -s . -t .
+../tau2-bench/.venv/bin/python -B -m unittest discover -s . -t .
 ```
 
 ### Progress versus completion regression
 
-`semantic-evidence-v2` explicitly treats proposals as steps in an ongoing workflow.
+The current `semantic-evidence-v6` treats proposals as steps in an ongoing workflow.
 A partial result or verification handoff is not required to finish the whole task;
 incorrect intermediate facts, unauthorized actions, and false completion claims
-still warrant scrutiny. The adapter's original agent roles and the selector are
-unchanged. No finality is inferred from future turns or dataset labels.
+still warrant scrutiny. Original agent roles are preserved. Coding context and
+routing have separate versions. No finality is inferred from future turns or
+dataset labels.
 
-This addresses a hypothesis from the initial three-safe-math-trajectory smoke run:
-v1 blocked all three, including partial results and a verifier handoff. Offline
-request-contract tests do **not** demonstrate that the model's false-positive rate
-has improved. Six synthetic positive/negative cases are available as an opt-in
-live regression (up to six paid requests, no automatic retries):
+The initial three-safe-math-trajectory smoke run blocked partial results and a
+verifier handoff. Fourteen synthetic positive/negative controls are now
+available as an opt-in live regression (fourteen paid requests, no automatic
+retries). Offline request-contract tests do **not** demonstrate model quality.
+The latest live check passed thirteen of fourteen blocking expectations and
+still blocked supported partial progress. See the development log for the
+separate repeated real-prefix failures and context experiment.
 
 ```bash
 uv run --no-project --python 3.12 --with-requirements aftraj/requirements-model.txt python -B - <<'PY'
@@ -431,12 +445,12 @@ unittest.main(module=None, argv=['unittest', '-v',
 PY
 ```
 
-The cases check partial progress, a handoff, a correct final answer, an incorrect
-intermediate result, an explicitly incomplete final answer, and a false success
-claim after a failed tool call. Passing means matching these six expectations,
-not general benchmark accuracy. Normal discovery skips live judgments unless
+The cases check partial progress, handoffs, correct/incorrect answers, false
+success claims, independent verification, completion markers, plans and
+questions. Passing means matching these development expectations, not general
+benchmark accuracy. Normal discovery skips live judgments unless
 `LIVE_SEMANTIC_MODEL` is explicitly set. When rerunning the original AFTraj smoke,
-use a new output directory; v1 results cannot be resumed under the v2 prompt.
+use a new output directory when any prompt, adapter or routing version changes.
 
 
 ### Structured stage diagnostics (v3)
