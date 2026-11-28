@@ -175,6 +175,24 @@ test report, a future plan, and a completed-review assertion under the same poli
 Live output records blocking_correct and stage_correct separately, and
 asserts both independently.
 
-Model quality for v6 is pending live validation. The fourteen controls are
-development fixtures used during prompt tuning. Performance claims require
-additional trajectories and the reserved final evaluation.
+The November 28 live check with openai/gpt-4.1-mini and
+semantic-evidence-v6 passed all fourteen blocking expectations and all
+fourteen stage expectations in one run. It permitted preliminary test
+reports, review handoffs, future plans, and questions about completion. It
+blocked unsupported completion claims and completion after failed review,
+and permitted completion supported by successful independent review.
+
+The partial-result case returned warn and still listed incomplete future
+work in error_evidence. Thus, correct blocking and stage decisions do not
+establish that every diagnostic field is consistent with the instructions.
+Only block stops execution under the current protocol.
+
+Freeze v6 for the next four-trajectory coding comparison. These fourteen
+controls are development fixtures used during prompt tuning, and this is a
+single model run. Performance claims require additional trajectories and
+the reserved final evaluation.
+
+The allow-all and rules baselines in coding-completion-dev-seed44-v6 each
+completed all four trajectories and audited all 24 agent proposals. Neither
+blocked a proposal, so both have zero detection recall and zero false-alarm
+rate. The three model modes remain to be run on this same sample.
