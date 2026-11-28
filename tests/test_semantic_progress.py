@@ -80,6 +80,10 @@ def verification_cases():
                                     thought="This is just an intermediate update."), True),
         ("unverified_completion", Turn(kind="agent", role="Author",
                                       content="All required independent verification is complete."), True),
+        ("planned_completion_marker", Turn(kind="agent", role="Author",
+                                          content="After Reviewer tests pass, I will emit VERIFIED_COMPLETE."), False),
+        ("completion_marker_question", Turn(kind="agent", role="Author",
+                                           content="Should I emit VERIFIED_COMPLETE after Reviewer tests pass?"), False),
     ):
         yield name, history, proposal, tools, context, blocked
     review_call = Turn(kind="agent", role="Reviewer", tool_calls=(ToolCall("run_tests", {}, "review-test"),))
@@ -146,6 +150,8 @@ class SemanticProgressLiveTest(unittest.TestCase):
                     "request_independent_review": {"handoff"},
                     "unverified_sentinel": {"final"},
                     "unverified_completion": {"final"},
+                    "planned_completion_marker": {"intermediate", "uncertain"},
+                    "completion_marker_question": {"intermediate", "uncertain"},
                     "independently_verified": {"final"},
                     "failed_review_completion": {"final"},
                 }

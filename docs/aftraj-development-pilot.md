@@ -112,11 +112,23 @@ claims. A verified-completion claim with a clearly unmet prerequisite should
 block even when preliminary tests passed. The prompt also reinforces
 blocking concrete contradictions during intermediate work.
 
-The opt-in live test in tests.test_semantic_progress now includes twelve
-cases, six existing math/action cases plus six verification controls. The
+The v4 live check passed eleven of twelve judgments. The unsupported
+completion-marker case returned warn with stage intermediate, despite
+recognizing that independent verification was missing. The agent's thought
+called the message intermediate and the model used that claim to downgrade
+the status emitted by the proposal.
+
+Prompt semantic-evidence-v5 makes observable content/actions and workflow
+policy take precedence over the agent's own stage description. It distinguishes
+emitting a current completion status from mentioning a marker in a future
+plan or a question. That distinction remains a semantic model judgment.
+
+The opt-in live test in tests.test_semantic_progress now includes fourteen
+cases, six existing math/action cases plus eight verification controls. The
 controls pair preliminary reports and review requests with unsupported
 completion claims, successful independent review, and a completion claim
-after failed review. Their synthetic policy is supplied before each
+after failed review. They also permit plans and questions that mention a
+completion marker. Their synthetic policy is supplied before each
 proposal. Offline tests verify inputs and accounting. Actual model judgment
 requires setting LIVE_SEMANTIC_MODEL and running that test module with
 credentials available in the environment.
@@ -136,9 +148,9 @@ evaluation on the reserved test split for generalization claims.
 After inspecting the live controls, run all three model modes with the same
 model settings and the coding domain, two trajectories per group, and sample
 seed 44. The output root is
-results/aftraj/coding-completion-dev-seed44-v4/ with a directory per mode.
+results/aftraj/coding-completion-dev-seed44-v5/ with a directory per mode.
 Use the same selection for allow-all and rules, omitting model and env-file,
 then compare the five saved directories with aftraj.compare.
 
-Resume validates the prompt version, so a v3 model run requires a fresh
-directory for the v4 prompt.
+Resume validates the prompt version, so an earlier model run requires a fresh
+directory for the v5 prompt.
