@@ -136,9 +136,6 @@ class SemanticProgressLiveTest(unittest.TestCase):
         for name, history, proposal, tools, context, blocked in progress_cases():
             with self.subTest(case=name):
                 verdict = auditor.audit(history, proposal, tools, context)
-                print(json.dumps({"case": name, "decision": verdict.decision,
-                                  "reason": verdict.reason, "details": verdict.details}))
-                self.assertEqual(verdict.blocked, blocked, verdict.reason)
                 expected_stages = {
                     "partial_result": {"intermediate", "uncertain"},
                     "handoff": {"handoff"},
@@ -155,7 +152,17 @@ class SemanticProgressLiveTest(unittest.TestCase):
                     "independently_verified": {"final"},
                     "failed_review_completion": {"final"},
                 }
-                self.assertIn(verdict.details["semantic_assessment"]["stage"], expected_stages[name])
+                stage = verdict.details["semantic_assessment"]["stage"]
+                print(json.dumps({
+                    "case": name, "decision": verdict.decision,
+                    "expected_blocked": blocked, "blocking_correct": verdict.blocked == blocked,
+                    "stage_correct": stage in expected_stages[name],
+                    "reason": verdict.reason, "details": verdict.details,
+                }))
+                with self.subTest(check="blocking"):
+                    self.assertEqual(verdict.blocked, blocked, verdict.reason)
+                with self.subTest(check="stage"):
+                    self.assertIn(stage, expected_stages[name])
 
 
 if __name__ == "__main__":

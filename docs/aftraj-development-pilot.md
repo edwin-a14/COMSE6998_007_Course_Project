@@ -148,9 +148,33 @@ evaluation on the reserved test split for generalization claims.
 After inspecting the live controls, run all three model modes with the same
 model settings and the coding domain, two trajectories per group, and sample
 seed 44. The output root is
-results/aftraj/coding-completion-dev-seed44-v5/ with a directory per mode.
+results/aftraj/coding-completion-dev-seed44-v6/ with a directory per mode.
 Use the same selection for allow-all and rules, omitting model and env-file,
 then compare the five saved directories with aftraj.compare.
 
 Resume validates the prompt version, so an earlier model run requires a fresh
-directory for the v5 prompt.
+directory for a different prompt.
+
+## v5 regression and v6 candidate
+
+On the fourteen-case live check, v5 made twelve correct blocking decisions.
+It incorrectly blocked the author's preliminary test report and a future
+plan to emit the completion marker after review. Two additional cases had
+correct block verdicts but incorrect intermediate stage labels for explicit
+completion claims. Ten of fourteen cases met both expectations.
+
+This regressed the earlier behavior. The original unsupported-marker case
+was blocked, but the prompt introduced new false blocks. The implementation
+continues to retain all expected decisions and stages as regression checks.
+
+The v6 candidate replaces the accumulated instructions with a shorter
+sequence: classify what the proposal claims, then assess whether that claim
+is supported. It explicitly distinguishes workflow progress from the
+communicative stage of an unsupported final claim. It provides examples of a
+test report, a future plan, and a completed-review assertion under the same policy.
+Live output records blocking_correct and stage_correct separately, and
+asserts both independently.
+
+Model quality for v6 is pending live validation. The fourteen controls are
+development fixtures used during prompt tuning. Performance claims require
+additional trajectories and the reserved final evaluation.
